@@ -16,13 +16,21 @@ type BastionConfig struct {
 }
 
 type Profile struct {
-	Host     string         `yaml:"host"`
-	Port     int            `yaml:"port"`
+	Driver   string         `yaml:"driver,omitempty"` // postgres (default) | mysql | sqlite
+	Host     string         `yaml:"host,omitempty"`
+	Port     int            `yaml:"port,omitempty"`
 	Database string         `yaml:"database"`
-	User     string         `yaml:"user"`
-	Password string         `yaml:"password"`
-	SSLMode  string         `yaml:"sslmode"`
+	User     string         `yaml:"user,omitempty"`
+	Password string         `yaml:"password,omitempty"`
+	SSLMode  string         `yaml:"sslmode,omitempty"`
 	Bastion  *BastionConfig `yaml:"bastion,omitempty"`
+}
+
+func (p *Profile) DriverName() string {
+	if p.Driver == "" {
+		return "postgres"
+	}
+	return p.Driver
 }
 
 // ResolvedPassword returns the actual password, expanding $ENV_VAR references.

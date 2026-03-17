@@ -1,115 +1,57 @@
 package db
 
 import (
-	"context"
 	"fmt"
 	"net"
-	"strings"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Row is a slice of string-formatted column values.
 type Row []string
 
+// ResultSet is the unified result type returned by all Driver implementations.
 type ResultSet struct {
 	Columns []string
 	Pages   [][]Row
 	Total   int
 	Elapsed time.Duration
-	Message string
+	Message string // DML/DDL success message or error text
 	IsError bool
 }
 
+// Executor is a thin wrapper kept for backward-compat with tab.go callers
+// that call SetPageSize. The real work is in each Driver impl.
 type Executor struct {
-	pool     *pgxpool.Pool
+	driver   Driver
 	pageSize int
 }
 
-func NewExecutor(pool *pgxpool.Pool, pageSize int) *Executor {
+func NewExecutor(driver Driver, pageSize int) *Executor {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
-	return &Executor{pool: pool, pageSize: pageSize}
+	return &Executor{driver: driver, pageSize: pageSize}
 }
 
 func (e *Executor) SetPageSize(n int) {
 	if n > 0 {
 		e.pageSize = n
+		// propagate to underlying driver if it supports it
+		if pd, ok := e.driver.(*PostgresDriver); ok {
+			pd.SetPageSize(n)
+		}
+		if md, ok := e.driver.(*MySQLDriver); ok {
+			md.SetPageSize(n)
+		}
+		if sd, ok := e.driver.(*SQLiteDriver); ok {
+			sd.SetPageSize(n)
+		}
 	}
 }
 
-func (e *Executor) Execute(ctx context.Context, query string) (*ResultSet, error) {
-	query = strings.TrimSpace(query)
-	start := time.Now()
+func (e *Executor) Driver() Driver { return e.driver }
 
-	upper := strings.ToUpper(query)
-	isSelect := strings.HasPrefix(upper, "SELECT") ||
-		strings.HasPrefix(upper, "WITH") ||
-		strings.HasPrefix(upper, "TABLE") ||
-		strings.HasPrefix(upper, "VALUES") ||
-		strings.HasPrefix(upper, "SHOW")
-
-	// acquire a dedicated connection for this query
-	conn, err := e.pool.Acquire(ctx)
-	if err != nil {
-		return &ResultSet{IsError: true, Message: err.Error(), Elapsed: time.Since(start)}, nil
-	}
-	defer conn.Release()
-
-	if !isSelect {
-		tag, err := conn.Exec(ctx, query)
-		elapsed := time.Since(start)
-		if err != nil {
-			return &ResultSet{IsError: true, Message: err.Error(), Elapsed: elapsed}, nil
-		}
-		return &ResultSet{
-			Message: fmt.Sprintf("%s — %d rows affected", tag.String(), tag.RowsAffected()),
-			Elapsed: elapsed,
-		}, nil
-	}
-
-	rows, err := conn.Query(ctx, query)
-	if err != nil {
-		return &ResultSet{IsError: true, Message: err.Error(), Elapsed: time.Since(start)}, nil
-	}
-	defer rows.Close()
-
-	fields := rows.FieldDescriptions()
-	cols := make([]string, len(fields))
-	for i, f := range fields {
-		cols[i] = string(f.Name)
-	}
-
-	var allRows []Row
-	for rows.Next() {
-		vals, err := rows.Values()
-		if err != nil {
-			return nil, err
-		}
-		row := make(Row, len(vals))
-		for i, v := range vals {
-			row[i] = formatValue(v)
-		}
-		allRows = append(allRows, row)
-	}
-	if err := rows.Err(); err != nil {
-		return &ResultSet{IsError: true, Message: err.Error(), Elapsed: time.Since(start)}, nil
-	}
-	elapsed := time.Since(start)
-
-	pages := paginate(allRows, e.pageSize)
-	if len(pages) == 0 {
-		pages = [][]Row{{}}
-	}
-
-	return &ResultSet{
-		Columns: cols,
-		Pages:   pages,
-		Total:   len(allRows),
-		Elapsed: elapsed,
-	}, nil
-}
+// ── shared helpers ────────────────────────────────────────────────────────────
 
 func formatValue(v any) string {
 	if v == nil {

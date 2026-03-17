@@ -23,26 +23,44 @@ const (
 	FocusBrowser
 )
 
-// messages
+// tabID is a unique identifier assigned once per TabModel at creation.
+// All async messages carry the tabID of the tab that originated them so
+// every other tab can discard them immediately.
+type tabID uint64
+
+var nextTabID tabID = 1
+
+func allocTabID() tabID {
+	id := nextTabID
+	nextTabID++
+	return id
+}
+
+// messages — each carries the originating tabID
 type queryDoneMsg struct {
+	id     tabID
 	result *db.ResultSet
 }
 type connectDoneMsg struct {
+	id   tabID
 	conn *connection.Conn
 	err  error
 }
 type schemaRefreshDoneMsg struct {
+	id   tabID
 	snap *cache.SchemaSnapshot
 	err  error
 }
-type reconnectMsg struct{}
+type reconnectMsg struct{ id tabID }
 
 type TabModel struct {
+	id          tabID
 	profileName string
 	profile     *config.Profile
 	settings    config.Settings
 
 	conn        *connection.Conn
+	driver      db.Driver
 	executor    *db.Executor
 	schemaCache *cache.SchemaCache
 
@@ -59,7 +77,7 @@ type TabModel struct {
 
 	cancelQuery    context.CancelFunc
 	queryRunning   bool
-	sessionQueries []string // in-memory only, newest first, reset each tab
+	sessionQueries []string
 }
 
 func NewTab(profileName string, profile *config.Profile, settings config.Settings) *TabModel {
@@ -70,6 +88,7 @@ func NewTab(profileName string, profile *config.Profile, settings config.Setting
 	_ = sc.Load()
 
 	t := &TabModel{
+		id:          allocTabID(),
 		profileName: profileName,
 		profile:     profile,
 		settings:    settings,
@@ -92,11 +111,12 @@ func (t *TabModel) InitCmds() tea.Cmd {
 
 func (t *TabModel) Connect() tea.Cmd {
 	t.statusBar.SetConnecting()
+	id := t.id
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		conn, err := connection.Connect(ctx, t.profileName, t.profile)
-		return connectDoneMsg{conn: conn, err: err}
+		conn, err := connection.Connect(ctx, t.profileName, t.profile, t.settings.PageSize)
+		return connectDoneMsg{id: id, conn: conn, err: err}
 	}
 }
 
@@ -130,17 +150,24 @@ func (t *TabModel) SetSize(w, h int) {
 func (t *TabModel) Update(msg tea.Msg) (*TabModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case connectDoneMsg:
+		if msg.id != t.id {
+			return t, nil
+		}
 		if msg.err != nil {
 			t.statusBar.SetDisconnected()
 			t.statusBar.SetMessage(styleError.Render("connect error: " + msg.err.Error()))
 			return t, nil
 		}
 		t.conn = msg.conn
-		t.executor = db.NewExecutor(t.conn.Pool, t.settings.PageSize)
+		t.driver = msg.conn.Driver
+		t.executor = db.NewExecutor(t.driver, t.settings.PageSize)
 		t.statusBar.SetConnected(t.profileName)
 		return t, t.refreshSchema()
 
 	case schemaRefreshDoneMsg:
+		if msg.id != t.id {
+			return t, nil
+		}
 		if msg.err == nil && msg.snap != nil {
 			_ = t.schemaCache.Set(msg.snap)
 			t.browser.refreshTables()
@@ -148,6 +175,9 @@ func (t *TabModel) Update(msg tea.Msg) (*TabModel, tea.Cmd) {
 		return t, nil
 
 	case queryDoneMsg:
+		if msg.id != t.id {
+			return t, nil
+		}
 		t.queryRunning = false
 		t.cancelQuery = nil
 		if msg.result != nil {
@@ -163,6 +193,9 @@ func (t *TabModel) Update(msg tea.Msg) (*TabModel, tea.Cmd) {
 		return t, nil
 
 	case reconnectMsg:
+		if msg.id != t.id {
+			return t, nil
+		}
 		return t, t.Connect()
 
 	case tea.KeyMsg:
@@ -375,7 +408,7 @@ func (t *TabModel) executeQuery() tea.Cmd {
 		return nil
 	}
 
-	if t.conn == nil {
+	if t.driver == nil {
 		t.statusBar.SetMessage(styleError.Render("not connected"))
 		return nil
 	}
@@ -388,37 +421,75 @@ func (t *TabModel) executeQuery() tea.Cmd {
 	t.cancelQuery = cancel
 
 	query := raw
-	executor := t.executor
+	driver := t.driver
+	id := t.id
 
 	return func() tea.Msg {
 		defer cancel()
-		res, err := executor.Execute(ctx, query)
+		res, err := driver.Execute(ctx, query)
 		if err != nil {
-			return queryDoneMsg{result: &db.ResultSet{IsError: true, Message: err.Error()}}
+			return queryDoneMsg{id: id, result: &db.ResultSet{IsError: true, Message: err.Error()}}
 		}
-		return queryDoneMsg{result: res}
+		return queryDoneMsg{id: id, result: res}
 	}
 }
 
 func (t *TabModel) handleBackslash(cmd string) *db.ResultSet {
-	if t.conn == nil {
+	if t.driver == nil {
 		return &db.ResultSet{IsError: true, Message: "not connected"}
 	}
 	ctx := context.Background()
 
+	driverName := t.driver.DriverName()
+
 	switch {
 	case cmd == `\dt`:
-		return t.runQuery(ctx, "SELECT schemaname, tablename, tableowner FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY schemaname, tablename")
+		switch driverName {
+		case "mysql":
+			return t.runQuery(ctx, "SELECT TABLE_NAME, TABLE_TYPE, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME")
+		case "sqlite":
+			return t.runQuery(ctx, "SELECT name, type FROM sqlite_master WHERE type IN ('table','view') ORDER BY name")
+		default:
+			return t.runQuery(ctx, "SELECT schemaname, tablename, tableowner FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY schemaname, tablename")
+		}
 	case strings.HasPrefix(cmd, `\d `):
 		table := strings.TrimSpace(cmd[3:])
-		return t.runQuery(ctx, fmt.Sprintf(
-			"SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name = '%s' ORDER BY ordinal_position", table))
+		switch driverName {
+		case "mysql":
+			return t.runQuery(ctx, fmt.Sprintf("DESCRIBE `%s`", table))
+		case "sqlite":
+			return t.runQuery(ctx, fmt.Sprintf("PRAGMA table_info(%q)", table))
+		default:
+			return t.runQuery(ctx, fmt.Sprintf(
+				"SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name = '%s' ORDER BY ordinal_position", table))
+		}
 	case cmd == `\dn`:
-		return t.runQuery(ctx, "SELECT schema_name, schema_owner FROM information_schema.schemata ORDER BY schema_name")
+		switch driverName {
+		case "mysql":
+			return t.runQuery(ctx, "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME")
+		case "sqlite":
+			return t.runQuery(ctx, "PRAGMA database_list")
+		default:
+			return t.runQuery(ctx, "SELECT schema_name, schema_owner FROM information_schema.schemata ORDER BY schema_name")
+		}
 	case cmd == `\di`:
-		return t.runQuery(ctx, "SELECT schemaname, tablename, indexname FROM pg_indexes WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY schemaname, tablename, indexname")
+		switch driverName {
+		case "mysql":
+			return t.runQuery(ctx, "SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() GROUP BY TABLE_NAME, INDEX_NAME, NON_UNIQUE ORDER BY TABLE_NAME, INDEX_NAME")
+		case "sqlite":
+			return t.runQuery(ctx, "SELECT name, tbl_name FROM sqlite_master WHERE type='index' ORDER BY tbl_name, name")
+		default:
+			return t.runQuery(ctx, "SELECT schemaname, tablename, indexname FROM pg_indexes WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY schemaname, tablename, indexname")
+		}
 	case cmd == `\df`:
-		return t.runQuery(ctx, "SELECT n.nspname AS schema, p.proname AS name, pg_get_function_result(p.oid) AS returns FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY schema, name")
+		switch driverName {
+		case "mysql":
+			return t.runQuery(ctx, "SELECT ROUTINE_NAME, ROUTINE_TYPE, DTD_IDENTIFIER FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() ORDER BY ROUTINE_NAME")
+		case "sqlite":
+			return &db.ResultSet{Message: "SQLite does not support stored functions."}
+		default:
+			return t.runQuery(ctx, "SELECT n.nspname AS schema, p.proname AS name, pg_get_function_result(p.oid) AS returns FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY schema, name")
+		}
 	case cmd == `\refresh`:
 		go func() {
 			snap, err := t.refreshSchemaSync(ctx)
@@ -433,7 +504,7 @@ func (t *TabModel) handleBackslash(cmd string) *db.ResultSet {
 }
 
 func (t *TabModel) runQuery(ctx context.Context, q string) *db.ResultSet {
-	res, err := t.executor.Execute(ctx, q)
+	res, err := t.driver.Execute(ctx, q)
 	if err != nil {
 		return &db.ResultSet{IsError: true, Message: err.Error()}
 	}
@@ -441,25 +512,25 @@ func (t *TabModel) runQuery(ctx context.Context, q string) *db.ResultSet {
 }
 
 func (t *TabModel) refreshSchema() tea.Cmd {
-	conn := t.conn
+	driver := t.driver
 	sc := t.schemaCache
 	profileName := t.profileName
+	id := t.id
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		snap, err := db.IntrospectSchema(ctx, conn.Pool)
+		snap, err := driver.Introspect(ctx)
 		if err != nil {
-			return schemaRefreshDoneMsg{err: err}
+			return schemaRefreshDoneMsg{id: id, err: err}
 		}
 		snap.Profile = profileName
-		snap.RefreshedAt = time.Now()
 		_ = sc.Set(snap)
-		return schemaRefreshDoneMsg{snap: snap}
+		return schemaRefreshDoneMsg{id: id, snap: snap}
 	}
 }
 
 func (t *TabModel) refreshSchemaSync(ctx context.Context) (*cache.SchemaSnapshot, error) {
-	snap, err := db.IntrospectSchema(ctx, t.conn.Pool)
+	snap, err := t.driver.Introspect(ctx)
 	if err != nil {
 		return nil, err
 	}

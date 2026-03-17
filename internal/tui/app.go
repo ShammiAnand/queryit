@@ -623,14 +623,17 @@ func (app *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			app.closeActiveTab()
 			return app, nil
 		case "tab", "ctrl+tab", "ctrl+n":
-			// only switch tabs when selector is not open
 			if !app.selector.IsVisible() {
+				app.blurActiveTab()
 				app.tabBar.Next()
+				app.focusActiveTab()
 			}
 			return app, nil
 		case "shift+tab", "ctrl+shift+tab", "ctrl+p":
 			if !app.selector.IsVisible() {
+				app.blurActiveTab()
 				app.tabBar.Prev()
+				app.focusActiveTab()
 			}
 			return app, nil
 		}
@@ -666,6 +669,29 @@ func (app *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return app, nil
+}
+
+// blurActiveTab hides transient UI (autocomplete, history overlay) on the
+// currently active tab before switching away from it.
+func (app *AppModel) blurActiveTab() {
+	idx := app.tabBar.Active()
+	if idx < 0 || idx >= len(app.tabs) {
+		return
+	}
+	t := app.tabs[idx]
+	t.input.autocomplete.Hide()
+	t.history.Hide()
+}
+
+// focusActiveTab restores input focus on the newly active tab.
+func (app *AppModel) focusActiveTab() {
+	idx := app.tabBar.Active()
+	if idx < 0 || idx >= len(app.tabs) {
+		return
+	}
+	t := app.tabs[idx]
+	// restore focus to input pane when switching to a tab
+	t.setFocus(FocusInput)
 }
 
 func (app *AppModel) closeActiveTab() {

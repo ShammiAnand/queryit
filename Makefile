@@ -37,6 +37,10 @@ uninstall:
 clean:
 	rm -f $(BINARY)
 
+clean-cache:
+	rm -rf $${XDG_CACHE_HOME:-$$HOME/.cache}/queryit
+	@echo "Cache cleared"
+
 fmt:
 	gofmt -w .
 
