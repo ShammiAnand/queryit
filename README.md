@@ -1,13 +1,14 @@
 # queryit
 
-A keyboard-driven terminal UI for PostgreSQL. Faster than psql for interactive work.
+A keyboard-driven terminal UI for PostgreSQL, MySQL, and SQLite. Faster than psql for interactive work.
 
 ## Features
 
 - Multi-tab connections — each tab is an independent session
+- PostgreSQL, MySQL/MariaDB, and SQLite support
 - Direct connections and SSH bastion tunneling via PEM key
-- Schema browser (toggle with `ctrl+o`) — tables, columns, indexes
-- Recent queries panel per session; full searchable history with `ctrl+r`
+- Schema browser (`ctrl+o`) — tables, columns, indexes
+- Recent queries panel per session; searchable history with `ctrl+r`
 - Autocomplete for table and column names from live schema cache
 - Table and expanded row views; horizontal column scrolling
 - Connection profiles stored in `~/.config/queryit/config.yaml`
@@ -15,10 +16,12 @@ A keyboard-driven terminal UI for PostgreSQL. Faster than psql for interactive w
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/shammianand/queryit/main/install.sh | bash
-```
+# one-liner
+curl -fsSL https://raw.githubusercontent.com/ShammiAnand/queryit/main/install.sh | bash
 
-Requires Go 1.25+ to build from source.
+# from source (requires Go 1.25+)
+make install
+```
 
 ## Usage
 
@@ -77,13 +80,15 @@ Config file: `~/.config/queryit/config.yaml`
 
 ```yaml
 profiles:
-  local:
+  # PostgreSQL (default when driver is omitted)
+  local-pg:
     host: localhost
     port: 5432
     database: mydb
     user: postgres
     password: secret
 
+  # PostgreSQL via SSH bastion
   prod:
     host: db.example.com
     port: 5432
@@ -96,6 +101,20 @@ profiles:
       host: 10.0.0.1
       pem: ~/.ssh/bastion.pem
 
+  # MySQL / MariaDB
+  local-mysql:
+    driver: mysql
+    host: localhost
+    port: 3306
+    database: mydb
+    user: root
+    password: secret
+
+  # SQLite
+  analytics:
+    driver: sqlite
+    database: /path/to/analytics.db
+
 settings:
   page_size: 20
   query_timeout: 30
@@ -103,8 +122,11 @@ settings:
 ```
 
 Passwords prefixed with `$` are read from the environment at connect time.
+The `driver` field defaults to `postgres` when omitted — existing configs need no changes.
 
 ## Backslash commands
+
+All commands work across drivers; the underlying query is adapted per database.
 
 | Command | Description |
 |---------|-------------|
@@ -112,7 +134,7 @@ Passwords prefixed with `$` are read from the environment at connect time.
 | `\d <table>` | Describe a table |
 | `\dn` | List schemas |
 | `\di` | List indexes |
-| `\df` | List functions |
+| `\df` | List functions / routines |
 | `\refresh` | Reload schema cache from the database |
 
 ## Data locations

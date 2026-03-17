@@ -2,103 +2,144 @@
 
 ## What this is
 
-`queryit` is a keyboard-driven terminal UI (TUI) for PostgreSQL, written in Go.
-It uses Bubble Tea (Elm architecture) for the UI, pgxpool for database connections,
-and x/crypto/ssh for SSH bastion tunneling.
+`queryit` is a keyboard-driven terminal UI (TUI) for relational databases, written in Go.
+Supports PostgreSQL, MySQL/MariaDB, and SQLite. Uses Bubble Tea (Elm architecture) for the UI,
+a driver interface for database backends, and x/crypto/ssh for SSH bastion tunneling.
 
 ## Tech stack
 
 - **Go 1.25+**, module `github.com/shammianand/queryit`
 - **TUI**: `charmbracelet/bubbletea`, `charmbracelet/lipgloss`, `charmbracelet/bubbles`
-- **DB**: `jackc/pgx/v5` with `pgxpool` (pool per tab, max 3 conns)
+- **PostgreSQL**: `jackc/pgx/v5` with `pgxpool` (pool per tab, max 3 conns)
+- **MySQL**: `go-sql-driver/mysql` via `database/sql`
+- **SQLite**: `modernc.org/sqlite` (pure Go, no CGo) via `database/sql`
 - **CLI**: `spf13/cobra`
 - **Config**: `gopkg.in/yaml.v3`, stored at `~/.config/queryit/config.yaml`
 
 ## Repository layout
 
 ```
-main.go                        entrypoint; injects ldflags version into cmd
+main.go                          entrypoint; injects ldflags version into cmd
 cmd/
-  root.go                      cobra root; --profile flag; launches TUI
-  profile.go                   profile list/add/remove subcommands
+  root.go                        cobra root; --profile flag; launches TUI
+  profile.go                     profile list/add/remove subcommands
 internal/
-  config/config.go             YAML config load/save; XDG paths; $ENV_VAR password expansion
+  config/config.go               YAML config load/save; XDG paths; $ENV_VAR password expansion;
+                                 Profile.DriverName() returns "postgres" when driver field is absent
   connection/
-    manager.go                 pgxpool.New per tab; SSH tunnel → local port → pool
-    tunnel.go                  x/crypto/ssh local port forwarding
+    manager.go                   dispatches Connect() by driver name; returns *Conn{Driver, tunnel}
+    tunnel.go                    x/crypto/ssh local port forwarding (used by postgres + mysql)
   db/
-    executor.go                pool.Acquire per query; SELECT vs DML detection; pagination
-    introspect.go              information_schema + pg_catalog queries; filters partition children
-  cache/schema.go              in-memory SchemaSnapshot; JSON disk cache per profile
+    driver.go                    Driver interface: Execute, Introspect, Ping, Close, DriverName
+    executor.go                  Executor wrapper (SetPageSize propagation); shared Row/ResultSet types;
+                                 formatValue, paginate helpers
+    postgres.go                  PostgresDriver — pgxpool.Acquire per call
+    introspect_postgres.go       Postgres-specific information_schema + pg_catalog queries;
+                                 filters partition children; tags partition roots
+    mysql.go                     MySQLDriver + introspectMySQL — database/sql, information_schema
+    sqlite.go                    SQLiteDriver + introspectSQLite — sqlite_master + PRAGMA table_info
+  cache/schema.go                in-memory SchemaSnapshot (tables, columns, indexes, functions);
+                                 JSON disk cache per profile; Table.Partitioned bool
   completion/
-    engine.go                  context-aware fuzzy suggest (tables/columns only, no keywords)
-    keywords.go                SQL keyword list; backslash commands
+    engine.go                    context-aware fuzzy suggest (tables/columns only, no keywords)
+    keywords.go                  SQL keyword list; backslash commands
   tui/
-    app.go                     top-level Bubble Tea model; ProfileSelector; ProfileForm modal
-    tab.go                     per-tab model; Focus enum; key routing; query execution
-    input.go                   multi-line editor; history cycling via up/down; autocomplete hook
-    results.go                 table + expanded views; col scroll (colOffset); pagination
-    schemabrowser.go           left panel (ctrl+o); list + detail modes; 50 cols wide
-    recent.go                  session-only recent queries panel; collapses when unfocused
-    history.go                 JSONL disk history; searchable overlay (ctrl+r)
-    autocomplete.go            dropdown model; up/down to navigate; enter to accept
-    tabbar.go                  tab strip; active tab shows close marker
-    statusbar.go               connection state; row count; elapsed time
-    styles.go                  Catppuccin Mocha lipgloss theme; all shared styles here
-    keys.go                    key binding definitions (mostly informational now)
+    app.go                       top-level Bubble Tea model; ProfileSelector list; ProfileForm modal
+    tab.go                       per-tab model; Focus enum; key routing; query execution via Driver
+    input.go                     multi-line editor; history cycling via up/down; autocomplete hook
+    results.go                   table + expanded views; colOffset horizontal scroll; pagination
+    schemabrowser.go             left panel (ctrl+o); 50 cols; list + detail modes
+    recent.go                    session-only recent queries; collapses when unfocused
+    history.go                   JSONL disk history; searchable overlay (ctrl+r)
+    autocomplete.go              dropdown; up/down navigate; enter accept
+    tabbar.go                    tab strip; active tab shows close marker
+    statusbar.go                 connection state; row count; elapsed time
+    styles.go                    Catppuccin Mocha lipgloss theme; all shared styles
+    keys.go                      key binding definitions
 ```
 
 ## Architecture
 
-Each open database connection is a **TabModel**. Tabs are independent — separate
-pool, schema cache, history, and session state. The app routes key messages to the
-active tab; async messages (connect, query done, schema refresh) are broadcast to
-all tabs so each handles its own.
+Each open database connection is a **TabModel**. Tabs are independent — separate driver,
+schema cache, session history, and focus state.
+
+### Driver interface
+
+```go
+type Driver interface {
+    Execute(ctx, query) (*ResultSet, error)
+    Introspect(ctx) (*cache.SchemaSnapshot, error)
+    Ping(ctx) error
+    Close()
+    DriverName() string
+}
+```
+
+`connection.Connect()` reads `profile.DriverName()` and returns the appropriate implementation.
+`tab.go` holds a `db.Driver` field and calls it directly — no pgx types leak into the TUI layer.
 
 ### Focus cycle (within a tab)
 
-`esc` rotates: **Input → Recent → Results → Browser → Input**
+`esc` rotates: **Input → Recent (if entries) → Results → Browser (if open) → Input**
 
-Panels are skipped if not available (Recent: no entries yet; Browser: collapsed).
+Panels skipped if not available. `esc` inside browser detail goes back to list before cycling out.
 
 ### Connection flow
 
-1. `ctrl+t` → ProfileSelector → user picks profile or creates one via ProfileForm
-2. `tab.Connect()` returns a `tea.Cmd` that dials SSH tunnel (if bastion) then `pgxpool.New`
-3. On `connectDoneMsg` the tab starts a background schema introspection cmd
-4. Schema lands as `schemaRefreshDoneMsg`; updates cache + browser
+1. `ctrl+t` → ProfileSelector → user picks profile or creates one via ProfileForm modal
+2. `tab.Connect()` fires async cmd: dials SSH tunnel if bastion present, then opens driver
+3. `connectDoneMsg` → tab stores `conn.Driver`, creates `Executor`, starts schema introspect cmd
+4. `schemaRefreshDoneMsg` → updates cache + browser
 
 ### Query execution
 
-`F5` in the input pane → `tab.executeQuery()`:
-- Appends to disk history (`HistoryModel`) and session slice (`sessionQueries`)
+`F5` in input → `tab.executeQuery()`:
+- Appends to disk history and `sessionQueries` (in-memory, newest-first)
 - Clears input immediately
-- Fires an async `tea.Cmd` that calls `executor.Execute` (acquires pool conn, runs query, releases)
-- Result arrives as `queryDoneMsg`; results pane and status bar update
+- Fires async `tea.Cmd` → `driver.Execute(ctx, query)`
+- `queryDoneMsg` → results pane and status bar update
+
+### Backslash commands
+
+`\dt`, `\d`, `\dn`, `\di`, `\df` dispatch to driver-appropriate SQL in `handleBackslash()`.
+`\refresh` calls `driver.Introspect()` in a goroutine and updates the cache.
 
 ## Key invariants
 
-- **`pgxpool`** per tab — never share a connection between goroutines. Each `Execute` and `IntrospectSchema` call does `pool.Acquire` / `defer conn.Release`.
-- **Width arithmetic uses plain string lengths**, not `lipgloss.Width`, for padding calculations. Apply styles after building the string at the correct width. Mixing styled strings into `len()` breaks layout.
-- **`sessionQueries`** (in-memory, `[]string`, newest-first) feeds the Recent panel and inline up/down history. `HistoryModel` (disk JSONL) feeds only `ctrl+r` search. New tab = empty `sessionQueries`.
-- **Partition children excluded** from schema browser and introspection. Only parent tables shown; partitioned roots tagged with `Partitioned: bool`.
-- **`browserWidth = 50`** — all width math in `schemabrowser.go` uses plain `len()` for padding. Do not mix ANSI-styled strings into width calculations.
-- **Input box height is fixed** (`inputVisibleLines = 4`, `inputBoxH = 6`). The box pads content to exactly `maxVisibleLines` rows so it never shifts.
+- **One Driver per tab** — drivers manage their own concurrency (pgxpool.Acquire, sql.DB pool).
+  Never share a connection between goroutines.
+- **Width arithmetic uses plain string lengths**, not `lipgloss.Width`, for padding calculations.
+  Apply styles after the string is built at the correct length. Mixing ANSI strings into `len()`
+  breaks layout (learned the hard way in schemabrowser.go).
+- **`sessionQueries`** (`[]string`, newest-first, per TabModel) feeds the Recent panel and
+  inline up/down history. `HistoryModel` (JSONL on disk) feeds only `ctrl+r` search.
+  New tab = empty `sessionQueries`.
+- **Partition children excluded** from schema browser. Only parent tables shown; roots tagged
+  `Partitioned: true`. Postgres-only — MySQL and SQLite have no partitioned table concept.
+- **`browserWidth = 50`** — all width math in `schemabrowser.go` uses plain `len()`.
+- **Input box height is fixed** (`inputVisibleLines = 4`, `inputBoxH = 6`). Padded to exactly
+  `maxVisibleLines` rows so it never shifts layout.
+- **`driver` field in config is `omitempty`** — defaults to `"postgres"` via `Profile.DriverName()`.
+  No existing config breaks.
 
-## Adding features
+## Adding a new database driver
 
-**New key binding in a tab**: add a case in `tab.go handleKey()` under the relevant `Focus` block.
+1. Create `internal/db/<name>.go` implementing `db.Driver`
+2. Use `database/sql` with a pure-Go driver if possible
+3. Add `connect<Name>()` in `connection/manager.go` and wire into the `switch` in `Connect()`
+4. Add backslash command SQL variants in `tab.go handleBackslash()` for the new driver name
+5. No changes needed in config, TUI, cache, or completion packages
 
-**New TUI panel**: implement `Height() int` and `View() string`; wire into `tab.SetSize()` and `tab.View()`. Add a `FocusX` constant and handle it in `setFocus()` and the `esc` cycle.
+## Adding a TUI panel
 
-**New DB query**: add to `db/executor.go` or `db/introspect.go`. Always use `pool.Acquire` / `defer conn.Release` — never pass `*pgx.Conn` directly.
-
-**New config field**: add to `config.Settings` struct and `applyDefaults()` in `config/config.go`.
-
-**New profile form field**: increment `fCount`, add a `formField` entry in `newProfileForm()`, handle in `ProfileForm.submit()` and `ProfileForm.ShowEdit()`.
+1. Implement `Height() int` and `View() string`
+2. Wire into `tab.SetSize()` (subtract panel height from results)
+3. Add a `FocusX` constant to the `Focus` enum
+4. Handle in `setFocus()` and the `esc` cycle in `handleKey()`
 
 ## Style conventions
 
 - Theme: Catppuccin Mocha. All colours and shared styles in `tui/styles.go`.
-- Autocomplete renders above the input box (inside results area) so input never shifts.
-- No mouse support. No non-PostgreSQL drivers (interfaces exist at db layer for future addition).
+- No blink ticker — static solid cursor (`styleCursor`: accent bg, dark fg).
+- Autocomplete renders above the input box inside the results area — input never shifts.
+- No mouse support. No GUI.
