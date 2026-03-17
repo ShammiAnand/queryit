@@ -24,6 +24,7 @@ type ResultsModel struct {
 	width       int
 	height      int
 	focused     bool
+	colOffset   int // first visible column index (horizontal scroll)
 }
 
 func NewResultsModel(mode ViewMode, pageSize int) *ResultsModel {
@@ -37,6 +38,7 @@ func (r *ResultsModel) SetResult(res *db.ResultSet) {
 	r.result = res
 	r.currentPage = 0
 	r.currentRow = 0
+	r.colOffset = 0
 }
 
 func (r *ResultsModel) SetSize(w, h int) {
@@ -112,6 +114,21 @@ func (r *ResultsModel) PrevRow() {
 		if r.result != nil && len(r.result.Pages) > r.currentPage {
 			r.currentRow = len(r.result.Pages[r.currentPage]) - 1
 		}
+	}
+}
+
+func (r *ResultsModel) ScrollColRight() {
+	if r.result == nil {
+		return
+	}
+	if r.colOffset < len(r.result.Columns)-1 {
+		r.colOffset++
+	}
+}
+
+func (r *ResultsModel) ScrollColLeft() {
+	if r.colOffset > 0 {
+		r.colOffset--
 	}
 }
 
@@ -199,7 +216,8 @@ func (r *ResultsModel) viewTable() string {
 		innerW = 40
 	}
 
-	// compute natural col widths
+	// compute natural col widths across all rows on this page
+	const maxColW = 36
 	colWidths := make([]int, len(cols))
 	for i, c := range cols {
 		colWidths[i] = len(c)
@@ -211,28 +229,41 @@ func (r *ResultsModel) viewTable() string {
 			}
 		}
 	}
-
-	// cap individual col width so they fit; determine how many cols visible
-	const maxColW = 40
 	for i := range colWidths {
 		if colWidths[i] > maxColW {
 			colWidths[i] = maxColW
 		}
 	}
 
-	visibleCols := len(cols)
-	var totalW int
-	for i, w := range colWidths {
-		totalW += w + 3
-		if totalW > innerW && i > 0 {
-			visibleCols = i
-			break
-		}
+	// clamp colOffset
+	if r.colOffset >= len(cols) {
+		r.colOffset = len(cols) - 1
+	}
+	if r.colOffset < 0 {
+		r.colOffset = 0
 	}
 
-	// header row
+	// determine which columns fit starting from colOffset
+	firstCol := r.colOffset
+	lastCol := firstCol // exclusive end, computed below
+	var totalW int
+	for i := firstCol; i < len(cols); i++ {
+		totalW += colWidths[i] + 3 // cell + separator
+		if totalW > innerW && i > firstCol {
+			break
+		}
+		lastCol = i + 1
+	}
+	if lastCol <= firstCol {
+		lastCol = firstCol + 1
+	}
+	if lastCol > len(cols) {
+		lastCol = len(cols)
+	}
+
+	// header
 	var hcells []string
-	for i := 0; i < visibleCols; i++ {
+	for i := firstCol; i < lastCol; i++ {
 		hcells = append(hcells, styleHeader.Width(colWidths[i]+2).Render(cols[i]))
 	}
 	header := strings.Join(hcells, styleMuted.Render("│"))
@@ -243,7 +274,7 @@ func (r *ResultsModel) viewTable() string {
 
 	for ri, row := range page {
 		var cells []string
-		for ci := 0; ci < visibleCols; ci++ {
+		for ci := firstCol; ci < lastCol; ci++ {
 			val := ""
 			if ci < len(row) {
 				val = truncate(row[ci], colWidths[ci])
@@ -259,9 +290,13 @@ func (r *ResultsModel) viewTable() string {
 
 	// footer
 	totalPages := len(r.result.Pages)
+	colInfo := ""
+	if len(cols) > lastCol-firstCol {
+		colInfo = fmt.Sprintf("  │  cols %d-%d/%d  </> scroll", firstCol+1, lastCol, len(cols))
+	}
 	pageStr := styleMuted.Render(fmt.Sprintf(
-		"page %d/%d · %d rows/page · total %d  │  +/- change page size  │  n/p next/prev",
-		r.currentPage+1, totalPages, r.pageSize, r.result.Total,
+		"page %d/%d · %d rows/page · total %d  │  +/- page size  │  n/p next/prev%s",
+		r.currentPage+1, totalPages, r.pageSize, r.result.Total, colInfo,
 	))
 	lines = append(lines, "", pageStr)
 
