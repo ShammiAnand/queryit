@@ -14,10 +14,24 @@ WHERE schema_name NOT IN ('pg_catalog','information_schema','pg_toast')
 ORDER BY schema_name`
 
 const queryTables = `
-SELECT table_schema, table_name
-FROM information_schema.tables
-WHERE table_schema NOT IN ('pg_catalog','information_schema','pg_toast')
-ORDER BY table_schema, table_name`
+SELECT t.table_schema, t.table_name,
+       (c.relkind = 'p') AS is_partitioned
+FROM information_schema.tables t
+JOIN pg_class     c  ON c.relname   = t.table_name
+JOIN pg_namespace ns ON ns.oid      = c.relnamespace
+                     AND ns.nspname = t.table_schema
+WHERE t.table_schema NOT IN ('pg_catalog','information_schema','pg_toast')
+  AND t.table_type = 'BASE TABLE'
+  AND c.relkind IN ('r','p')   -- regular or partitioned
+  -- exclude partition children
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_inherits i
+    JOIN pg_class parent ON parent.oid = i.inhparent
+    WHERE i.inhrelid = c.oid
+      AND parent.relkind = 'p'
+  )
+ORDER BY t.table_schema, t.table_name`
 
 const queryColumns = `
 SELECT table_schema, table_name, column_name, data_type,
@@ -77,13 +91,18 @@ func IntrospectSchema(ctx context.Context, pool *pgxpool.Pool) (*cache.SchemaSna
 	}
 	for rows.Next() {
 		var schema, name string
-		if err := rows.Scan(&schema, &name); err != nil {
+		var isPartitioned bool
+		if err := rows.Scan(&schema, &name, &isPartitioned); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		key := schema + "." + name
 		tableIndex[key] = len(snap.Tables)
-		snap.Tables = append(snap.Tables, cache.Table{Schema: schema, Name: name})
+		snap.Tables = append(snap.Tables, cache.Table{
+			Schema:      schema,
+			Name:        name,
+			Partitioned: isPartitioned,
+		})
 	}
 	rows.Close()
 

@@ -39,8 +39,10 @@ func (r *RecentModel) SetEntries(entries []string) {
 
 func (r *RecentModel) SetFocused(f bool) {
 	r.focused = f
-	if f && r.collapsed {
-		r.collapsed = false // auto-expand on focus
+	if f {
+		r.collapsed = false // expand when focused
+	} else {
+		r.collapsed = true  // collapse when focus leaves
 	}
 }
 

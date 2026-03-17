@@ -20,6 +20,7 @@ const (
 	FocusInput Focus = iota
 	FocusRecent
 	FocusResults
+	FocusBrowser
 )
 
 // messages
@@ -50,13 +51,15 @@ type TabModel struct {
 	recent    *RecentModel
 	statusBar *StatusBar
 	history   *HistoryModel
+	browser   *SchemaBrowser
 
-	focus        Focus
-	width        int
-	height       int
+	focus          Focus
+	width          int
+	height         int
 
-	cancelQuery  context.CancelFunc
-	queryRunning bool
+	cancelQuery    context.CancelFunc
+	queryRunning   bool
+	sessionQueries []string // in-memory only, newest first, reset each tab
 }
 
 func NewTab(profileName string, profile *config.Profile, settings config.Settings) *TabModel {
@@ -75,6 +78,7 @@ func NewTab(profileName string, profile *config.Profile, settings config.Setting
 		recent:      NewRecentModel(),
 		statusBar:   NewStatusBar(profileName),
 		history:     NewHistoryModel(historyPath, settings.HistorySize),
+		browser:     NewSchemaBrowser(sc),
 		focus:       FocusInput,
 	}
 	t.input = NewInputModel(sc)
@@ -105,16 +109,22 @@ const (
 func (t *TabModel) SetSize(w, h int) {
 	t.width = w
 	t.height = h
-	t.recent.SetWidth(w)
+
+	// browser takes a fixed left column when open
+	bw := t.browser.Width() // 0 when collapsed, browserWidth when open
+	mainW := w - bw
+
+	t.browser.SetSize(bw, h)
+	t.recent.SetWidth(mainW)
 	recentH := t.recent.Height()
 	resultsH := h - inputBoxH - statusH - recentH
 	if resultsH < 3 {
 		resultsH = 3
 	}
-	t.input.SetSize(w, inputVisibleLines)
-	t.results.SetSize(w, resultsH)
+	t.input.SetSize(mainW, inputVisibleLines)
+	t.results.SetSize(mainW, resultsH)
 	t.statusBar.SetWidth(w)
-	t.history.SetSize(w-4, h-4)
+	t.history.SetSize(mainW-4, h-4)
 }
 
 func (t *TabModel) Update(msg tea.Msg) (*TabModel, tea.Cmd) {
@@ -133,6 +143,7 @@ func (t *TabModel) Update(msg tea.Msg) (*TabModel, tea.Cmd) {
 	case schemaRefreshDoneMsg:
 		if msg.err == nil && msg.snap != nil {
 			_ = t.schemaCache.Set(msg.snap)
+			t.browser.refreshTables()
 		}
 		return t, nil
 
@@ -147,8 +158,7 @@ func (t *TabModel) Update(msg tea.Msg) (*TabModel, tea.Cmd) {
 				t.statusBar.SetQueryResult(msg.result.Total, msg.result.Elapsed)
 			}
 		}
-		// ensure recent panel is up to date (history was appended before exec)
-		t.recent.SetEntries(t.history.NewestFirst())
+		t.recent.SetEntries(t.sessionQueries)
 		t.SetSize(t.width, t.height)
 		return t, nil
 
@@ -176,7 +186,7 @@ func (t *TabModel) setFocus(f Focus) {
 	t.input.SetFocused(f == FocusInput)
 	t.recent.SetFocused(f == FocusRecent)
 	t.results.SetFocused(f == FocusResults)
-	// recompute layout when recent panel may have toggled expand/collapse
+	t.browser.SetFocused(f == FocusBrowser)
 	t.SetSize(t.width, t.height)
 }
 
@@ -207,6 +217,18 @@ func (t *TabModel) handleKey(msg tea.KeyMsg) (*TabModel, tea.Cmd) {
 		return t, nil
 	}
 
+	// ctrl+o toggles the schema browser
+	if k == "ctrl+o" {
+		t.browser.Toggle()
+		t.SetSize(t.width, t.height)
+		if !t.browser.IsCollapsed() {
+			t.setFocus(FocusBrowser)
+		} else if t.focus == FocusBrowser {
+			t.setFocus(FocusInput)
+		}
+		return t, nil
+	}
+
 	// ctrl+r → history search overlay (any focus)
 	if k == "ctrl+r" {
 		t.history.Show()
@@ -227,9 +249,17 @@ func (t *TabModel) handleKey(msg tea.KeyMsg) (*TabModel, tea.Cmd) {
 		return t, nil
 	}
 
-	// esc cycles focus: Results → Recent → Input → Results
+	// esc cycles focus: Browser → Results → Recent → Input → (Browser if open else Results)
 	if k == "esc" {
 		switch t.focus {
+		case FocusBrowser:
+			// esc inside detail → back to list; esc in list → move focus on
+			if t.browser.mode == bmDetail {
+				t.browser.mode = bmList
+				return t, nil
+			}
+			// fall through to next focus: Input
+			t.setFocus(FocusInput)
 		case FocusInput:
 			if t.recent.HasEntries() {
 				t.setFocus(FocusRecent)
@@ -239,7 +269,11 @@ func (t *TabModel) handleKey(msg tea.KeyMsg) (*TabModel, tea.Cmd) {
 		case FocusRecent:
 			t.setFocus(FocusResults)
 		case FocusResults:
-			t.setFocus(FocusInput)
+			if !t.browser.IsCollapsed() {
+				t.setFocus(FocusBrowser)
+			} else {
+				t.setFocus(FocusInput)
+			}
 		}
 		return t, nil
 	}
@@ -272,6 +306,15 @@ func (t *TabModel) handleKey(msg tea.KeyMsg) (*TabModel, tea.Cmd) {
 		case " ": // space toggles collapse
 			t.recent.Toggle()
 			t.SetSize(t.width, t.height)
+		}
+
+	case FocusBrowser:
+		// browser handles esc internally (detail→list) above;
+		// space pastes table name into input
+		paste := t.browser.HandleKey(k)
+		if paste != "" {
+			t.input.SetValue(paste)
+			t.setFocus(FocusInput)
 		}
 
 	case FocusResults:
@@ -312,13 +355,13 @@ func (t *TabModel) executeQuery() tea.Cmd {
 		return nil
 	}
 
-	// persist to history, refresh inline history + recent panel
+	// persist to disk history for ctrl+r search
 	_ = t.history.Append(raw)
-	newest := t.history.NewestFirst()
-	t.input.SetHistory(newest)
-	t.recent.SetEntries(newest)
-	t.SetSize(t.width, t.height) // recompute layout after recent panel may grow
-	// clear input immediately
+	// prepend to session-only list (newest first)
+	t.sessionQueries = append([]string{raw}, t.sessionQueries...)
+	t.input.SetHistory(t.sessionQueries)
+	t.recent.SetEntries(t.sessionQueries)
+	t.SetSize(t.width, t.height)
 	t.input.Clear()
 
 	// handle backslash commands synchronously
@@ -431,13 +474,16 @@ func (t *TabModel) Close() {
 }
 
 func (t *TabModel) View() string {
+	bw := t.browser.Width()
+	mainW := t.width - bw
+
 	recentH := t.recent.Height()
 	resultsH := t.height - inputBoxH - statusH - recentH
 	if resultsH < 3 {
 		resultsH = 3
 	}
 
-	// Autocomplete floats at the bottom of the results area — never moves input.
+	// autocomplete floats above input inside the results area
 	acView := t.input.AutocompleteView()
 	var resultsContent string
 	if acView != "" {
@@ -446,25 +492,35 @@ func (t *TabModel) View() string {
 		if innerH < 1 {
 			innerH = 1
 		}
-		inner := lipgloss.NewStyle().Height(innerH).MaxHeight(innerH).Width(t.width).Render(t.results.View())
+		inner := lipgloss.NewStyle().Height(innerH).MaxHeight(innerH).Width(mainW).Render(t.results.View())
 		resultsContent = lipgloss.JoinVertical(lipgloss.Left, inner, acView)
 	} else {
-		resultsContent = lipgloss.NewStyle().Height(resultsH).MaxHeight(resultsH).Width(t.width).Render(t.results.View())
+		resultsContent = lipgloss.NewStyle().Height(resultsH).MaxHeight(resultsH).Width(mainW).Render(t.results.View())
 	}
 
-	// History search overlay replaces the middle section
+	// history overlay
 	if t.history.IsVisible() {
-		return lipgloss.JoinVertical(lipgloss.Left,
+		mainCol := lipgloss.JoinVertical(lipgloss.Left,
 			resultsContent,
 			t.history.View(),
 			t.statusBar.View(),
 		)
+		if bw > 0 {
+			return lipgloss.JoinHorizontal(lipgloss.Top, t.browser.View(), mainCol)
+		}
+		return mainCol
 	}
 
-	parts := []string{resultsContent}
+	// normal layout
+	mainParts := []string{resultsContent}
 	if recentH > 0 {
-		parts = append(parts, t.recent.View())
+		mainParts = append(mainParts, t.recent.View())
 	}
-	parts = append(parts, t.input.View(), t.statusBar.View())
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	mainParts = append(mainParts, t.input.View(), t.statusBar.View())
+	mainCol := lipgloss.JoinVertical(lipgloss.Left, mainParts...)
+
+	if bw > 0 {
+		return lipgloss.JoinHorizontal(lipgloss.Top, t.browser.View(), mainCol)
+	}
+	return mainCol
 }

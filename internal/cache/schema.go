@@ -15,9 +15,10 @@ type Column struct {
 }
 
 type Table struct {
-	Schema  string   `json:"schema"`
-	Name    string   `json:"name"`
-	Columns []Column `json:"columns"`
+	Schema      string   `json:"schema"`
+	Name        string   `json:"name"`
+	Columns     []Column `json:"columns"`
+	Partitioned bool     `json:"partitioned,omitempty"`
 }
 
 type Index struct {
