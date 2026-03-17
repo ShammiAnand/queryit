@@ -2,6 +2,8 @@
 
 A keyboard-driven terminal UI for PostgreSQL, MySQL, and SQLite. Faster than psql for interactive work.
 
+https://github.com/user-attachments/assets/453bffb4-7984-45f3-ae2b-754d6d61077c
+
 ## Features
 
 - Multi-tab connections — each tab is an independent session
