@@ -26,10 +26,12 @@ type formField struct {
 type ProfileForm struct {
 	visible  bool
 	fields   []formField
-	active   int // which field has cursor
+	active   int
 	err      string
 	width    int
 	height   int
+	editMode bool
+	origName string
 }
 
 const (
@@ -69,8 +71,28 @@ func (f *ProfileForm) Show(width, height int) {
 	f.err = ""
 	f.width = width
 	f.height = height
+	f.editMode = false
+	f.origName = ""
 	for i := range f.fields {
 		f.fields[i].value = ""
+	}
+}
+
+func (f *ProfileForm) ShowEdit(name string, p *config.Profile, width, height int) {
+	f.Show(width, height)
+	f.editMode = true
+	f.origName = name
+	f.fields[fName].value = name
+	f.fields[fHost].value = p.Host
+	f.fields[fPort].value = fmt.Sprintf("%d", p.Port)
+	f.fields[fDB].value = p.Database
+	f.fields[fUser].value = p.User
+	f.fields[fPass].value = p.Password
+	f.fields[fSSL].value = p.SSLMode
+	if p.Bastion != nil {
+		f.fields[fBastionUser].value = p.Bastion.User
+		f.fields[fBastionHost].value = p.Bastion.Host
+		f.fields[fBastionPEM].value = p.Bastion.PEM
 	}
 }
 
@@ -206,7 +228,11 @@ func (f *ProfileForm) View() string {
 	fieldW := w - 8 // inner usable width for the input box content
 
 	accentBold := lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
-	title := accentBold.Render("New connection profile")
+	titleStr := "New connection profile"
+	if f.editMode {
+		titleStr = "Edit profile: " + f.origName
+	}
+	title := accentBold.Render(titleStr)
 	subtitle := styleMuted.Render("tab · next field   shift+tab · prev   enter · save   esc · cancel")
 
 	// how many fields fit
@@ -305,11 +331,13 @@ func (f *ProfileForm) View() string {
 // ─── Profile selector list ────────────────────────────────────────────────────
 
 type ProfileSelector struct {
-	visible  bool
-	profiles []string
-	selected int
-	cfg      *config.Config
-	form     *ProfileForm
+	visible       bool
+	profiles      []string
+	selected      int
+	cfg           *config.Config
+	form          *ProfileForm
+	editingName   string // non-empty when form is in edit mode
+	confirmDelete string // non-empty when waiting for delete confirmation
 }
 
 func NewProfileSelector(cfg *config.Config) *ProfileSelector {
@@ -324,15 +352,25 @@ func (ps *ProfileSelector) refreshProfiles() {
 		ps.profiles = append(ps.profiles, name)
 	}
 	sort.Strings(ps.profiles)
+	if ps.selected >= len(ps.profiles) && len(ps.profiles) > 0 {
+		ps.selected = len(ps.profiles) - 1
+	}
 }
 
 func (ps *ProfileSelector) Show() {
 	ps.visible = true
 	ps.selected = 0
+	ps.confirmDelete = ""
+	ps.editingName = ""
 	ps.refreshProfiles()
 }
 
-func (ps *ProfileSelector) Hide() { ps.visible = false }
+func (ps *ProfileSelector) Hide() {
+	ps.visible = false
+	ps.confirmDelete = ""
+	ps.editingName = ""
+}
+
 func (ps *ProfileSelector) IsVisible() bool { return ps.visible || ps.form.IsVisible() }
 
 func (ps *ProfileSelector) next() {
@@ -347,6 +385,17 @@ func (ps *ProfileSelector) prev() {
 	}
 }
 
+func (ps *ProfileSelector) openEditForm(width, height int) {
+	if ps.selected >= len(ps.profiles) {
+		return
+	}
+	name := ps.profiles[ps.selected]
+	p := ps.cfg.Profiles[name]
+	ps.editingName = name
+	ps.form.ShowEdit(name, p, width, height)
+	ps.visible = false
+}
+
 // HandleKey returns (profileName, profile, done).
 func (ps *ProfileSelector) HandleKey(key string, runes []rune, width, height int) (string, *config.Profile, bool) {
 	// form is open — route to it
@@ -354,13 +403,35 @@ func (ps *ProfileSelector) HandleKey(key string, runes []rune, width, height int
 		name, p, done := ps.form.HandleKey(key, runes)
 		if done {
 			if name != "" && p != nil {
-				// new profile created
+				if ps.editingName != "" && ps.editingName != name {
+					// name changed — remove old key
+					delete(ps.cfg.Profiles, ps.editingName)
+					_ = config.RemoveProfile(ps.editingName)
+				}
+				ps.editingName = ""
 				ps.cfg.Profiles[name] = p
 				ps.Hide()
 				return name, p, true
 			}
-			// cancelled — go back to list
+			// cancelled — back to list
+			ps.editingName = ""
 			ps.form.Hide()
+			ps.visible = true
+		}
+		return "", nil, false
+	}
+
+	// delete confirmation prompt
+	if ps.confirmDelete != "" {
+		switch key {
+		case "y", "Y":
+			name := ps.confirmDelete
+			ps.confirmDelete = ""
+			delete(ps.cfg.Profiles, name)
+			_ = config.RemoveProfile(name)
+			ps.refreshProfiles()
+		case "n", "N", "esc":
+			ps.confirmDelete = ""
 		}
 		return "", nil, false
 	}
@@ -373,7 +444,7 @@ func (ps *ProfileSelector) HandleKey(key string, runes []rune, width, height int
 		ps.prev()
 	case "enter":
 		if ps.selected == len(ps.profiles) {
-			// open form modal
+			ps.editingName = ""
 			ps.form.Show(width, height)
 			ps.visible = false
 			return "", nil, false
@@ -382,6 +453,14 @@ func (ps *ProfileSelector) HandleKey(key string, runes []rune, width, height int
 		p := ps.cfg.Profiles[name]
 		ps.Hide()
 		return name, p, true
+	case "e":
+		if ps.selected < len(ps.profiles) {
+			ps.openEditForm(width, height)
+		}
+	case "d":
+		if ps.selected < len(ps.profiles) {
+			ps.confirmDelete = ps.profiles[ps.selected]
+		}
 	case "esc":
 		ps.Hide()
 		return "", nil, true
@@ -407,7 +486,19 @@ func (ps *ProfileSelector) View(width, height int) string {
 
 	accentBold := lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
 	title := accentBold.Render("Connect to a database")
-	hint := styleMuted.Render("j/k · navigate   enter · connect   esc · cancel")
+	hint := styleMuted.Render("j/k · navigate   enter · connect   e · edit   d · delete   esc · cancel")
+
+	// delete confirmation takes over the whole modal
+	if ps.confirmDelete != "" {
+		body := lipgloss.JoinVertical(lipgloss.Left,
+			title, "",
+			styleError.Render("Delete profile \""+ps.confirmDelete+"\"?"),
+			"",
+			lipgloss.NewStyle().Bold(true).Render("y")+" "+styleMuted.Render("yes — remove permanently")+"   "+
+				lipgloss.NewStyle().Bold(true).Render("n / esc")+" "+styleMuted.Render("cancel"),
+		)
+		return styleOverlay.Width(w).Render(body)
+	}
 
 	arrow := lipgloss.NewStyle().Foreground(colorGreen).Bold(true).Render("▶")
 	space := "  "
