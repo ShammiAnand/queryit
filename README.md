@@ -16,12 +16,17 @@ A keyboard-driven terminal UI for PostgreSQL, MySQL, and SQLite. Faster than psq
 ## Install
 
 ```sh
-# one-liner
+# one-liner (downloads pre-built binary, requires only curl)
 curl -fsSL https://raw.githubusercontent.com/ShammiAnand/queryit/main/install.sh | bash
+
+# custom install directory
+INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/ShammiAnand/queryit/main/install.sh | bash
 
 # from source (requires Go 1.25+)
 make install
 ```
+
+Supported platforms: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`.
 
 ## Usage
 
