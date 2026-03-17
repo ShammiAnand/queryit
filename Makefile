@@ -19,13 +19,19 @@ all: build
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
+INSTALL_CMD := install
+ifeq ($(shell test -w $(BINDIR) 2>/dev/null || echo no), no)
+	INSTALL_CMD := sudo install
+endif
+
 install: build
-	install -d $(BINDIR)
-	install -m 755 $(BINARY) $(BINDIR)/$(BINARY)
+	$(INSTALL_CMD) -d $(BINDIR)
+	$(INSTALL_CMD) -m 755 $(BINARY) $(BINDIR)/$(BINARY)
 	@echo "Installed $(BINARY) to $(BINDIR)/$(BINARY)"
 
 uninstall:
-	rm -f $(BINDIR)/$(BINARY)
+	$(INSTALL_CMD) -d $(BINDIR)
+	rm -f $(BINDIR)/$(BINARY) 2>/dev/null || sudo rm -f $(BINDIR)/$(BINARY)
 	@echo "Removed $(BINDIR)/$(BINARY)"
 
 clean:
