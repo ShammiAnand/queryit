@@ -13,12 +13,12 @@ import (
 // When expanded it shows up to maxVisible entries; j/k or up/down navigate,
 // Enter pastes the selected query into the input box.
 type RecentModel struct {
-	entries     []string // newest first
-	selected    int
-	collapsed   bool
-	focused     bool
-	maxVisible  int
-	width       int
+	entries    []string // newest first
+	selected   int
+	collapsed  bool
+	focused    bool
+	maxVisible int
+	width      int
 }
 
 func NewRecentModel() *RecentModel {
@@ -42,7 +42,7 @@ func (r *RecentModel) SetFocused(f bool) {
 	if f {
 		r.collapsed = false // expand when focused
 	} else {
-		r.collapsed = true  // collapse when focus leaves
+		r.collapsed = true // collapse when focus leaves
 	}
 }
 

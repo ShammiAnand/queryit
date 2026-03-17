@@ -53,9 +53,9 @@ type TabModel struct {
 	history   *HistoryModel
 	browser   *SchemaBrowser
 
-	focus          Focus
-	width          int
-	height         int
+	focus  Focus
+	width  int
+	height int
 
 	cancelQuery    context.CancelFunc
 	queryRunning   bool

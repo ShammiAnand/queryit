@@ -20,7 +20,7 @@ const browserWidth = 50
 type browserMode int
 
 const (
-	bmList   browserMode = iota
+	bmList browserMode = iota
 	bmDetail
 )
 
@@ -45,9 +45,9 @@ func NewSchemaBrowser(schema *cache.SchemaCache) *SchemaBrowser {
 	return &SchemaBrowser{schema: schema, collapsed: true}
 }
 
-func (b *SchemaBrowser) SetSize(_, h int) { b.height = h }
+func (b *SchemaBrowser) SetSize(_, h int)  { b.height = h }
 func (b *SchemaBrowser) SetFocused(f bool) { b.focused = f }
-func (b *SchemaBrowser) IsCollapsed() bool  { return b.collapsed }
+func (b *SchemaBrowser) IsCollapsed() bool { return b.collapsed }
 
 func (b *SchemaBrowser) Width() int {
 	if b.collapsed {
@@ -235,13 +235,13 @@ var (
 					Border(lipgloss.RoundedBorder()).
 					BorderForeground(colorBorder)
 
-	styleBrowserHeader  = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
-	styleBrowserSec     = lipgloss.NewStyle().Bold(true).Foreground(colorYellow)
-	styleBrowserSel     = lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent)
-	styleBrowserSelDim  = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-	styleBrowserNormal  = lipgloss.NewStyle().Foreground(colorFg)
-	styleBrowserMuted   = lipgloss.NewStyle().Foreground(colorMuted)
-	styleBrowserPart    = lipgloss.NewStyle().Foreground(colorYellow)
+	styleBrowserHeader = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
+	styleBrowserSec    = lipgloss.NewStyle().Bold(true).Foreground(colorYellow)
+	styleBrowserSel    = lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent)
+	styleBrowserSelDim = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	styleBrowserNormal = lipgloss.NewStyle().Foreground(colorFg)
+	styleBrowserMuted  = lipgloss.NewStyle().Foreground(colorMuted)
+	styleBrowserPart   = lipgloss.NewStyle().Foreground(colorYellow)
 )
 
 // ── View ──────────────────────────────────────────────────────────────────────

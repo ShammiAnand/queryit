@@ -51,16 +51,16 @@ const (
 func newProfileForm() *ProfileForm {
 	return &ProfileForm{
 		fields: []formField{
-			{label: "Profile name",            placeholder: "my-db"},
-			{label: "Host",                    placeholder: "localhost"},
-			{label: "Port",                    placeholder: "5432"},
-			{label: "Database",                placeholder: "mydb"},
-			{label: "User",                    placeholder: "postgres"},
-			{label: "Password",                placeholder: "$ENV_VAR or plaintext", password: true},
-			{label: "SSL mode",                placeholder: "prefer", optional: true},
-			{label: "Bastion user",            placeholder: "ubuntu  (leave empty to skip)", optional: true},
-			{label: "Bastion host",            placeholder: "10.0.0.1", optional: true},
-			{label: "Bastion PEM",             placeholder: "~/.ssh/key.pem", optional: true},
+			{label: "Profile name", placeholder: "my-db"},
+			{label: "Host", placeholder: "localhost"},
+			{label: "Port", placeholder: "5432"},
+			{label: "Database", placeholder: "mydb"},
+			{label: "User", placeholder: "postgres"},
+			{label: "Password", placeholder: "$ENV_VAR or plaintext", password: true},
+			{label: "SSL mode", placeholder: "prefer", optional: true},
+			{label: "Bastion user", placeholder: "ubuntu  (leave empty to skip)", optional: true},
+			{label: "Bastion host", placeholder: "10.0.0.1", optional: true},
+			{label: "Bastion PEM", placeholder: "~/.ssh/key.pem", optional: true},
 		},
 	}
 }
@@ -96,7 +96,7 @@ func (f *ProfileForm) ShowEdit(name string, p *config.Profile, width, height int
 	}
 }
 
-func (f *ProfileForm) Hide() { f.visible = false }
+func (f *ProfileForm) Hide()           { f.visible = false }
 func (f *ProfileForm) IsVisible() bool { return f.visible }
 
 // viewportStart returns the index of the first field to show so the active
@@ -177,11 +177,21 @@ func (f *ProfileForm) submit() (string, *config.Profile, bool) {
 
 	// validate required fields
 	missing := []string{}
-	if name == "" { missing = append(missing, "profile name") }
-	if host == "" { missing = append(missing, "host") }
-	if db == "" { missing = append(missing, "database") }
-	if user == "" { missing = append(missing, "user") }
-	if pass == "" { missing = append(missing, "password") }
+	if name == "" {
+		missing = append(missing, "profile name")
+	}
+	if host == "" {
+		missing = append(missing, "host")
+	}
+	if db == "" {
+		missing = append(missing, "database")
+	}
+	if user == "" {
+		missing = append(missing, "user")
+	}
+	if pass == "" {
+		missing = append(missing, "password")
+	}
 	if len(missing) > 0 {
 		f.err = "required: " + strings.Join(missing, ", ")
 		return "", nil, false
@@ -236,7 +246,7 @@ func (f *ProfileForm) View() string {
 	subtitle := styleMuted.Render("tab · next field   shift+tab · prev   enter · save   esc · cancel")
 
 	// how many fields fit
-	linesPerField := 4 // label(1) + border-top(1) + content(1) + border-bottom(1)
+	linesPerField := 4                                                         // label(1) + border-top(1) + content(1) + border-bottom(1)
 	reserved := 2 /*title+subtitle*/ + 1 /*blank*/ + 2 /*overlay padding*/ + 2 /*err*/
 	maxVisible := (f.height - reserved) / linesPerField
 	if maxVisible < 2 {

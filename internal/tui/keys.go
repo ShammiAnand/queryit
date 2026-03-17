@@ -19,16 +19,16 @@ var GlobalKeys = GlobalKeyMap{
 }
 
 type InputKeyMap struct {
-	Execute  key.Binding
-	Cancel   key.Binding
-	History  key.Binding
+	Execute     key.Binding
+	Cancel      key.Binding
+	History     key.Binding
 	SwitchFocus key.Binding
 }
 
 var InputKeys = InputKeyMap{
-	Execute:  key.NewBinding(key.WithKeys("ctrl+enter", "f5"), key.WithHelp("ctrl+enter/f5", "execute")),
-	Cancel:   key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "cancel")),
-	History:  key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "history")),
+	Execute:     key.NewBinding(key.WithKeys("ctrl+enter", "f5"), key.WithHelp("ctrl+enter/f5", "execute")),
+	Cancel:      key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "cancel")),
+	History:     key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "history")),
 	SwitchFocus: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "switch focus")),
 }
 

@@ -2,8 +2,8 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/shammianand/queryit/internal/completion"
 	"github.com/shammianand/queryit/internal/cache"
+	"github.com/shammianand/queryit/internal/completion"
 )
 
 type AutocompleteModel struct {

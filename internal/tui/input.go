@@ -25,9 +25,9 @@ type InputModel struct {
 	autocomplete *AutocompleteModel
 
 	// inline history cycling
-	history     []string // newest-first slice passed in from HistoryModel
-	historyIdx  int      // -1 = not browsing; 0 = newest
-	historyDraft string  // saved draft while browsing
+	history      []string // newest-first slice passed in from HistoryModel
+	historyIdx   int      // -1 = not browsing; 0 = newest
+	historyDraft string   // saved draft while browsing
 }
 
 func NewInputModel(schema *cache.SchemaCache) *InputModel {
