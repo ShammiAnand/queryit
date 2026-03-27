@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"time"
+	"unicode/utf8"
 )
 
 // Row is a slice of string-formatted column values.
@@ -62,6 +63,9 @@ func formatValue(v any) string {
 		return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
 			val[0:4], val[4:6], val[6:8], val[8:10], val[10:16])
 	case []byte:
+		if utf8.Valid(val) {
+			return string(val)
+		}
 		return fmt.Sprintf("%x", val)
 	case net.HardwareAddr:
 		return val.String()
