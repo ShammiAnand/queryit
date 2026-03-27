@@ -45,6 +45,10 @@ func (j *JSONViewerModal) Show(raw string, w, h int) {
 func (j *JSONViewerModal) SetSize(w, h int) {
 	j.width = w
 	j.height = h
+	// clamp scroll after resize so View() cannot produce start > end
+	if max := len(j.lines) - j.visibleLines(); j.scrollOffset > max && max >= 0 {
+		j.scrollOffset = max
+	}
 }
 
 func (j *JSONViewerModal) ScrollDown() {
@@ -79,6 +83,12 @@ func (j *JSONViewerModal) View() string {
 	}
 	if w < 40 {
 		w = 40
+	}
+
+	if len(j.lines) == 0 {
+		title := stylePaneTitle.Render("JSON Viewer") +
+			"  " + styleMuted.Render("esc close")
+		return styleOverlay.Width(w).Render(title + "\n" + styleMuted.Render("(empty)"))
 	}
 
 	title := stylePaneTitle.Render("JSON Viewer") +
