@@ -27,7 +27,7 @@ func rowsToCSV(columns []string, pages [][]db.Row) string {
 	return sb.String()
 }
 
-// rowToCSV serialises a single row as a CSV line (no trailing newline stripped).
+// rowToCSV serialises a single row as a CSV line with the trailing newline removed.
 func rowToCSV(row db.Row) string {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
@@ -53,12 +53,7 @@ func copyToClipboard(text string) error {
 		if _, err := exec.LookPath(c.name); err != nil {
 			continue
 		}
-		var cmd *exec.Cmd
-		if len(c.args) > 0 {
-			cmd = exec.Command(c.name, c.args...)
-		} else {
-			cmd = exec.Command(c.name)
-		}
+		cmd := exec.Command(c.name, c.args...)
 		cmd.Stdin = strings.NewReader(text)
 		return cmd.Run()
 	}
@@ -82,10 +77,11 @@ func exportToFile(columns []string, pages [][]db.Row) (string, error) {
 	defer f.Close()
 
 	w := csv.NewWriter(f)
+	// Write errors are captured by w.Error() after Flush — do not early-return here.
 	_ = w.Write(columns)
 	for _, page := range pages {
 		for _, row := range page {
-			_ = w.Write(row)
+			_ = w.Write(row) // errors captured by w.Error() after Flush
 		}
 	}
 	w.Flush()
