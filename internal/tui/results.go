@@ -270,12 +270,11 @@ func (r *ResultsModel) viewTable() string {
 		return styleMuted.Render("No columns.")
 	}
 
-	innerW := r.width - 6 // border(2) + padding(2) + gutter(2)
+	innerW := r.width - 6
 	if innerW < 10 {
 		innerW = 40
 	}
 
-	// compute natural col widths across all rows on this page
 	const maxColW = 36
 	colWidths := make([]int, len(cols))
 	for i, c := range cols {
@@ -302,12 +301,11 @@ func (r *ResultsModel) viewTable() string {
 		r.colOffset = 0
 	}
 
-	// determine which columns fit starting from colOffset
 	firstCol := r.colOffset
-	lastCol := firstCol // exclusive end, computed below
+	lastCol := firstCol
 	var totalW int
 	for i := firstCol; i < len(cols); i++ {
-		totalW += colWidths[i] + 3 // cell + separator
+		totalW += colWidths[i] + 3
 		if totalW > innerW && i > firstCol {
 			break
 		}
@@ -319,6 +317,7 @@ func (r *ResultsModel) viewTable() string {
 	if lastCol > len(cols) {
 		lastCol = len(cols)
 	}
+	r.lastRenderedLastCol = lastCol // cache for NextCol
 
 	// header
 	var hcells []string
@@ -334,24 +333,40 @@ func (r *ResultsModel) viewTable() string {
 	for ri, row := range page {
 		var cells []string
 		for ci := firstCol; ci < lastCol; ci++ {
-			val := ""
+			rawVal := ""
 			if ci < len(row) {
-				val = truncate(row[ci], colWidths[ci])
+				rawVal = row[ci]
 			}
-			st := styleCell
-			if ri%2 == 1 {
+			val := truncate(rawVal, colWidths[ci])
+
+			// append [J] indicator for JSON cells, replacing last 3 chars
+			if isJSON(rawVal) {
+				tag := "[J]"
+				if len(val) >= len(tag) {
+					val = val[:len(val)-len(tag)] + tag
+				} else {
+					val = tag
+				}
+			}
+
+			// pick cell style: selected > alt row > normal
+			var st lipgloss.Style
+			if r.focused && ri == r.currentRow && ci == r.currentCol {
+				st = styleCellSelected
+			} else if ri%2 == 1 {
 				st = styleCellAlt
+			} else {
+				st = styleCell
 			}
 			cells = append(cells, st.Width(colWidths[ci]+2).Render(val))
 		}
 		lines = append(lines, strings.Join(cells, styleMuted.Render("│")))
 	}
 
-	// footer
 	totalPages := len(r.result.Pages)
 	colInfo := ""
 	if len(cols) > lastCol-firstCol {
-		colInfo = fmt.Sprintf("  │  cols %d-%d/%d  </> scroll", firstCol+1, lastCol, len(cols))
+		colInfo = fmt.Sprintf("  │  cols %d-%d/%d  h/l navigate", firstCol+1, lastCol, len(cols))
 	}
 	pageStr := styleMuted.Render(fmt.Sprintf(
 		"page %d/%d · %d rows/page · total %d  │  +/- page size  │  n/p next/prev%s",
@@ -407,7 +422,14 @@ func (r *ResultsModel) viewExpanded() string {
 		if valW < 1 {
 			valW = 10
 		}
-		valStr := styleCell.Width(valW).Render(truncate(val, valW))
+		display := truncate(val, valW)
+		if isJSON(val) {
+			tag := " [J]"
+			if len(display)+len(tag) <= valW {
+				display = display + styleMuted.Render(tag)
+			}
+		}
+		valStr := styleCell.Width(valW).Render(display)
 		lines = append(lines, label+styleMuted.Render("│")+valStr)
 	}
 

@@ -95,6 +95,11 @@ var (
 			Background(lipgloss.Color("#232330")).
 			Padding(0, 1)
 
+	styleCellSelected = lipgloss.NewStyle().
+			Foreground(colorBg).
+			Background(colorAccent).
+			Padding(0, 1)
+
 	styleAutocompleteSelected = lipgloss.NewStyle().
 					Foreground(colorBg).
 					Background(colorAccent).
