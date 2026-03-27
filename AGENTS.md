@@ -32,7 +32,7 @@ internal/
   db/
     driver.go                    Driver interface: Execute, Introspect, Ping, Close, DriverName
     executor.go                  Executor wrapper (SetPageSize propagation); shared Row/ResultSet types;
-                                 formatValue, paginate helpers
+                                 formatValue ([]byte→string if valid UTF-8; map/slice→JSON marshal), paginate
     postgres.go                  PostgresDriver — pgxpool.Acquire per call
     introspect_postgres.go       Postgres-specific information_schema + pg_catalog queries;
                                  filters partition children; tags partition roots
@@ -47,7 +47,11 @@ internal/
     app.go                       top-level Bubble Tea model; ProfileSelector list; ProfileForm modal
     tab.go                       per-tab model; Focus enum; key routing; query execution via Driver
     input.go                     multi-line editor; history cycling via up/down; autocomplete hook
-    results.go                   table + expanded views; colOffset horizontal scroll; pagination
+    results.go                   table + expanded views; currentCol cell cursor; colOffset horizontal scroll;
+                                 pagination; isJSON() detection; [J] tag; CurrentCell/CurrentRow/NextCol/PrevCol
+    jsonviewer.go                JSONViewerModal — full-screen scrollable overlay for JSON cells
+    copymenu.go                  CopyMenuModal; copyToClipboard (pbcopy/xclip/wl-copy/clip); rowsToCSV/rowToCSV;
+                                 exportToFile to ~/queryit_<timestamp>.csv
     schemabrowser.go             left panel (ctrl+o); 50 cols; list + detail modes
     recent.go                    session-only recent queries; collapses when unfocused
     history.go                   JSONL disk history; searchable overlay (ctrl+r)
@@ -55,7 +59,7 @@ internal/
     tabbar.go                    tab strip; active tab shows close marker
     statusbar.go                 connection state; row count; elapsed time
     styles.go                    Catppuccin Mocha lipgloss theme; all shared styles
-    keys.go                      key binding definitions
+    keys.go                      key binding definitions (ResultsKeyMap: NextCol/PrevCol/OpenJSON/CopyMenu)
 ```
 
 ## Architecture
@@ -117,6 +121,10 @@ Panels skipped if not available. `esc` inside browser detail goes back to list b
 - **Partition children excluded** from schema browser. Only parent tables shown; roots tagged
   `Partitioned: true`. Postgres-only — MySQL and SQLite have no partitioned table concept.
 - **`browserWidth = 50`** — all width math in `schemabrowser.go` uses plain `len()`.
+- **Modal key routing order** in `tab.go handleKey`: history overlay → JSON viewer → copy menu → global keys → focus dispatch. Each modal captures all keys while open; `esc` in the copy menu returns `t, nil` explicitly to prevent leaking into the focus-cycle handler.
+- **JSON detection** (`isJSON` in `results.go`): first-byte check (`{` or `[`) then `json.Unmarshal` — called once per visible cell during render, no caching needed.
+- **`lastRenderedLastCol`** is set inside `viewTable()` each render and read by `NextCol()` to know when the cursor has scrolled past the viewport edge. Never set it manually.
+- **`formatValue` handles JSON driver types**: PostgreSQL/MySQL return JSON columns as `map[string]interface{}` or `[]interface{}`; these are re-marshalled to JSON strings so `isJSON` works. Valid-UTF-8 `[]byte` is returned as `string(val)`; binary data falls back to hex.
 - **Input box height is fixed** (`inputVisibleLines = 4`, `inputBoxH = 6`). Padded to exactly
   `maxVisibleLines` rows so it never shifts layout.
 - **`driver` field in config is `omitempty`** — defaults to `"postgres"` via `Profile.DriverName()`.

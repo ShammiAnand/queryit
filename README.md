@@ -12,7 +12,9 @@ https://github.com/user-attachments/assets/453bffb4-7984-45f3-ae2b-754d6d61077c
 - Schema browser (`ctrl+o`) — tables, columns, indexes
 - Recent queries panel per session; searchable history with `ctrl+r`
 - Autocomplete for table and column names from live schema cache
-- Table and expanded row views; horizontal column scrolling
+- Table and expanded row views; cell-level navigation with `h`/`l`
+- JSON column detection — `[J]` indicator; `enter` opens a scrollable full-screen viewer
+- Copy/export menu (`y`) — copy cell, row, or full table to clipboard; export to CSV file
 - Connection profiles stored in `~/.config/queryit/config.yaml`
 
 ## Install
@@ -66,11 +68,33 @@ queryit profile remove <name>  # delete a profile
 
 | Key | Action |
 |-----|--------|
+| `j` / `k` | Next / previous row |
+| `h` / `l` | Previous / next column (cell cursor) |
 | `n` / `p` | Next / previous page |
 | `+` / `-` | Increase / decrease page size |
-| `<` / `>` | Scroll columns left / right |
 | `v` | Toggle table / expanded row view |
-| `j` / `k` | Navigate rows (expanded view) |
+| `enter` | Open JSON viewer (current cell must show `[J]`) |
+| `y` | Open copy/export menu |
+
+### JSON viewer
+
+Opens when the focused cell contains a JSON value (`[J]` indicator visible).
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Scroll down / up |
+| `y` | Copy raw JSON to clipboard and close |
+| `esc` | Close |
+
+### Copy / export menu
+
+| Key | Action |
+|-----|--------|
+| `c` | Copy current cell to clipboard |
+| `r` | Copy current row as CSV to clipboard |
+| `t` | Copy full result as CSV to clipboard |
+| `e` | Export full result to `~/queryit_<timestamp>.csv` |
+| `esc` | Cancel |
 
 ### Schema browser
 
