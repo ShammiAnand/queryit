@@ -124,21 +124,6 @@ func (r *ResultsModel) PrevRow() {
 	}
 }
 
-func (r *ResultsModel) ScrollColRight() {
-	if r.result == nil {
-		return
-	}
-	if r.colOffset < len(r.result.Columns)-1 {
-		r.colOffset++
-	}
-}
-
-func (r *ResultsModel) ScrollColLeft() {
-	if r.colOffset > 0 {
-		r.colOffset--
-	}
-}
-
 // NextCol moves the cell cursor one column right and scrolls the viewport if needed.
 func (r *ResultsModel) NextCol() {
 	if r.result == nil {

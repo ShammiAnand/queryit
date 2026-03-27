@@ -362,10 +362,10 @@ func (t *TabModel) handleKey(msg tea.KeyMsg) (*TabModel, tea.Cmd) {
 			t.results.NextRow()
 		case "k", "up":
 			t.results.PrevRow()
-		case ">", ".":
-			t.results.ScrollColRight()
-		case "<", ",":
-			t.results.ScrollColLeft()
+		case "l":
+			t.results.NextCol()
+		case "h":
+			t.results.PrevCol()
 		case "+", "=":
 			t.results.ChangePageSize(+10)
 			if t.executor != nil {

@@ -38,6 +38,10 @@ type ResultsKeyMap struct {
 	ToggleView  key.Binding
 	NextRow     key.Binding
 	PrevRow     key.Binding
+	NextCol     key.Binding
+	PrevCol     key.Binding
+	OpenJSON    key.Binding
+	CopyMenu    key.Binding
 	Reconnect   key.Binding
 	SwitchFocus key.Binding
 }
@@ -48,6 +52,10 @@ var ResultsKeys = ResultsKeyMap{
 	ToggleView:  key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "toggle view")),
 	NextRow:     key.NewBinding(key.WithKeys("j"), key.WithHelp("j", "next row")),
 	PrevRow:     key.NewBinding(key.WithKeys("k"), key.WithHelp("k", "prev row")),
+	NextCol:     key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "next col")),
+	PrevCol:     key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "prev col")),
+	OpenJSON:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "view JSON")),
+	CopyMenu:    key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "copy/export")),
 	Reconnect:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reconnect")),
 	SwitchFocus: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "switch focus")),
 }
