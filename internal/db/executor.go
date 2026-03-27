@@ -1,6 +1,7 @@
 package db
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"time"
@@ -71,6 +72,11 @@ func formatValue(v any) string {
 		return val.String()
 	case net.IP:
 		return val.String()
+	case map[string]interface{}, []interface{}:
+		if b, err := json.Marshal(val); err == nil {
+			return string(b)
+		}
+		return fmt.Sprintf("%v", val)
 	default:
 		return fmt.Sprintf("%v", val)
 	}
