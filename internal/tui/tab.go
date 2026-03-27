@@ -69,7 +69,9 @@ type TabModel struct {
 	recent    *RecentModel
 	statusBar *StatusBar
 	history   *HistoryModel
-	browser   *SchemaBrowser
+	browser    *SchemaBrowser
+	jsonViewer *JSONViewerModal
+	copyMenu   *CopyMenuModal
 
 	focus  Focus
 	width  int
@@ -98,6 +100,8 @@ func NewTab(profileName string, profile *config.Profile, settings config.Setting
 		statusBar:   NewStatusBar(profileName),
 		history:     NewHistoryModel(historyPath, settings.HistorySize),
 		browser:     NewSchemaBrowser(sc),
+		jsonViewer:  &JSONViewerModal{},
+		copyMenu:    &CopyMenuModal{},
 		focus:       FocusInput,
 	}
 	t.input = NewInputModel(sc)
@@ -145,6 +149,7 @@ func (t *TabModel) SetSize(w, h int) {
 	t.results.SetSize(mainW, resultsH)
 	t.statusBar.SetWidth(w)
 	t.history.SetSize(mainW-4, h-4)
+	t.jsonViewer.SetSize(w, h)
 }
 
 func (t *TabModel) Update(msg tea.Msg) (*TabModel, tea.Cmd) {
@@ -245,6 +250,72 @@ func (t *TabModel) handleKey(msg tea.KeyMsg) (*TabModel, tea.Cmd) {
 		default:
 			if len(msg.Runes) > 0 {
 				t.history.TypeChar(string(msg.Runes))
+			}
+		}
+		return t, nil
+	}
+
+	// JSON viewer captures all keys when open
+	if t.jsonViewer.IsVisible() {
+		switch k {
+		case "j", "down":
+			t.jsonViewer.ScrollDown()
+		case "k", "up":
+			t.jsonViewer.ScrollUp()
+		case "y":
+			if err := copyToClipboard(t.jsonViewer.RawJSON()); err != nil {
+				t.statusBar.SetMessage(styleError.Render("clipboard: " + err.Error()))
+			} else {
+				t.statusBar.SetMessage(styleSuccess.Render("JSON copied to clipboard"))
+			}
+			t.jsonViewer.Hide()
+		case "esc":
+			t.jsonViewer.Hide()
+		}
+		return t, nil
+	}
+
+	// copy menu captures all keys when open
+	if t.copyMenu.IsVisible() {
+		t.copyMenu.Hide() // close on any key; action keys handled below
+		switch k {
+		case "c":
+			cell := t.results.CurrentCell()
+			if err := copyToClipboard(cell); err != nil {
+				t.statusBar.SetMessage(styleError.Render("clipboard: " + err.Error()))
+			} else {
+				t.statusBar.SetMessage(styleSuccess.Render("cell copied to clipboard"))
+			}
+		case "r":
+			row := t.results.CurrentRow()
+			if row == nil {
+				return t, nil
+			}
+			if err := copyToClipboard(rowToCSV(row)); err != nil {
+				t.statusBar.SetMessage(styleError.Render("clipboard: " + err.Error()))
+			} else {
+				t.statusBar.SetMessage(styleSuccess.Render("row copied to clipboard"))
+			}
+		case "t":
+			rs := t.results.ResultSet()
+			if rs == nil {
+				return t, nil
+			}
+			if err := copyToClipboard(rowsToCSV(rs.Columns, rs.Pages)); err != nil {
+				t.statusBar.SetMessage(styleError.Render("clipboard: " + err.Error()))
+			} else {
+				t.statusBar.SetMessage(styleSuccess.Render("table copied to clipboard"))
+			}
+		case "e":
+			rs := t.results.ResultSet()
+			if rs == nil {
+				return t, nil
+			}
+			path, err := exportToFile(rs.Columns, rs.Pages)
+			if err != nil {
+				t.statusBar.SetMessage(styleError.Render("export: " + err.Error()))
+			} else {
+				t.statusBar.SetMessage(styleSuccess.Render("exported to " + path))
 			}
 		}
 		return t, nil
@@ -352,6 +423,17 @@ func (t *TabModel) handleKey(msg tea.KeyMsg) (*TabModel, tea.Cmd) {
 
 	case FocusResults:
 		switch k {
+		case "enter":
+			cell := t.results.CurrentCell()
+			if isJSON(cell) {
+				t.jsonViewer.Show(cell, t.width, t.height)
+			} else if cell != "" {
+				t.statusBar.SetMessage(styleMuted.Render("not a JSON cell"))
+			}
+		case "y":
+			if t.results.ResultSet() != nil {
+				t.copyMenu.Show(t.width, t.height)
+			}
 		case "n":
 			t.results.NextPage()
 		case "p":
@@ -549,6 +631,20 @@ func (t *TabModel) Close() {
 }
 
 func (t *TabModel) View() string {
+	// full-screen overlays take priority
+	if t.jsonViewer.IsVisible() {
+		return lipgloss.Place(t.width, t.height,
+			lipgloss.Center, lipgloss.Center,
+			t.jsonViewer.View(),
+		)
+	}
+	if t.copyMenu.IsVisible() {
+		return lipgloss.Place(t.width, t.height,
+			lipgloss.Center, lipgloss.Center,
+			t.copyMenu.View(),
+		)
+	}
+
 	bw := t.browser.Width()
 	mainW := t.width - bw
 

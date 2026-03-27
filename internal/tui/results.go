@@ -164,6 +164,9 @@ func (r *ResultsModel) CurrentCell() string {
 	return row[r.currentCol]
 }
 
+// ResultSet returns the current result set, or nil.
+func (r *ResultsModel) ResultSet() *db.ResultSet { return r.result }
+
 // CurrentRow returns the selected row as a db.Row, or nil if none.
 func (r *ResultsModel) CurrentRow() db.Row {
 	if r.result == nil || len(r.result.Pages) == 0 {
