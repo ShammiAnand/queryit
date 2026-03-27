@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -390,4 +391,18 @@ func center(s string, width int) string {
 	}
 	pad := (width - sw) / 2
 	return strings.Repeat(" ", pad) + s
+}
+
+// isJSON reports whether s is a valid JSON object or array.
+// Checks first byte to avoid Unmarshal cost on obviously non-JSON strings.
+func isJSON(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) < 2 {
+		return false
+	}
+	if s[0] != '{' && s[0] != '[' {
+		return false
+	}
+	var discard interface{}
+	return json.Unmarshal([]byte(s), &discard) == nil
 }
