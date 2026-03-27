@@ -28,7 +28,8 @@ type ResultsModel struct {
 	focused     bool
 	colOffset   int // first visible column index (horizontal scroll)
 
-	// set by viewTable on each render; used by NextCol to know when to scroll
+	// assigned by viewTable on each render (wired in the viewTable update task);
+	// used by NextCol to know when to scroll the viewport
 	lastRenderedLastCol int
 }
 
