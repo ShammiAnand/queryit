@@ -339,14 +339,14 @@ func (r *ResultsModel) viewTable() string {
 			}
 			val := truncate(rawVal, colWidths[ci])
 
-			// append [J] indicator for JSON cells, replacing last 3 chars
+			// append [J] indicator for JSON cells without mangling content
 			if isJSON(rawVal) {
 				tag := "[J]"
-				if len(val) >= len(tag) {
-					val = val[:len(val)-len(tag)] + tag
-				} else {
-					val = tag
+				maxValW := colWidths[ci] - len(tag)
+				if maxValW < 0 {
+					maxValW = 0
 				}
+				val = truncate(rawVal, maxValW) + tag
 			}
 
 			// pick cell style: selected > alt row > normal
@@ -425,9 +425,11 @@ func (r *ResultsModel) viewExpanded() string {
 		display := truncate(val, valW)
 		if isJSON(val) {
 			tag := " [J]"
-			if len(display)+len(tag) <= valW {
-				display = display + styleMuted.Render(tag)
+			maxDisplayW := valW - len(tag)
+			if maxDisplayW < 0 {
+				maxDisplayW = 0
 			}
+			display = truncate(val, maxDisplayW) + styleMuted.Render(tag)
 		}
 		valStr := styleCell.Width(valW).Render(display)
 		lines = append(lines, label+styleMuted.Render("│")+valStr)
