@@ -20,12 +20,16 @@ type ResultsModel struct {
 	result      *db.ResultSet
 	currentPage int
 	currentRow  int
+	currentCol  int // selected column index (absolute)
 	mode        ViewMode
 	pageSize    int
 	width       int
 	height      int
 	focused     bool
 	colOffset   int // first visible column index (horizontal scroll)
+
+	// set by viewTable on each render; used by NextCol to know when to scroll
+	lastRenderedLastCol int
 }
 
 func NewResultsModel(mode ViewMode, pageSize int) *ResultsModel {
@@ -39,6 +43,7 @@ func (r *ResultsModel) SetResult(res *db.ResultSet) {
 	r.result = res
 	r.currentPage = 0
 	r.currentRow = 0
+	r.currentCol = 0
 	r.colOffset = 0
 }
 
@@ -131,6 +136,58 @@ func (r *ResultsModel) ScrollColLeft() {
 	if r.colOffset > 0 {
 		r.colOffset--
 	}
+}
+
+// NextCol moves the cell cursor one column right and scrolls the viewport if needed.
+func (r *ResultsModel) NextCol() {
+	if r.result == nil {
+		return
+	}
+	if r.currentCol < len(r.result.Columns)-1 {
+		r.currentCol++
+	}
+	// if the new currentCol is past the last rendered visible col, advance viewport
+	if r.lastRenderedLastCol > 0 && r.currentCol >= r.lastRenderedLastCol {
+		r.colOffset = r.currentCol
+	}
+}
+
+// PrevCol moves the cell cursor one column left and scrolls the viewport if needed.
+func (r *ResultsModel) PrevCol() {
+	if r.currentCol > 0 {
+		r.currentCol--
+	}
+	if r.currentCol < r.colOffset {
+		r.colOffset = r.currentCol
+	}
+}
+
+// CurrentCell returns the raw string value of the selected cell, or "" if none.
+func (r *ResultsModel) CurrentCell() string {
+	if r.result == nil || len(r.result.Pages) == 0 {
+		return ""
+	}
+	page := r.result.Pages[r.currentPage]
+	if r.currentRow >= len(page) {
+		return ""
+	}
+	row := page[r.currentRow]
+	if r.currentCol >= len(row) {
+		return ""
+	}
+	return row[r.currentCol]
+}
+
+// CurrentRow returns the selected row as a db.Row, or nil if none.
+func (r *ResultsModel) CurrentRow() db.Row {
+	if r.result == nil || len(r.result.Pages) == 0 {
+		return nil
+	}
+	page := r.result.Pages[r.currentPage]
+	if r.currentRow >= len(page) {
+		return nil
+	}
+	return page[r.currentRow]
 }
 
 func (r *ResultsModel) ToggleView() {
