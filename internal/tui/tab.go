@@ -279,6 +279,9 @@ func (t *TabModel) handleKey(msg tea.KeyMsg) (*TabModel, tea.Cmd) {
 	if t.copyMenu.IsVisible() {
 		t.copyMenu.Hide() // close on any key; action keys handled below
 		switch k {
+		case "esc":
+			// menu hidden above; return before outer esc can cycle focus
+			return t, nil
 		case "c":
 			cell := t.results.CurrentCell()
 			if err := copyToClipboard(cell); err != nil {
