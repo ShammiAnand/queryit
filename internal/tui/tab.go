@@ -150,6 +150,7 @@ func (t *TabModel) SetSize(w, h int) {
 	t.statusBar.SetWidth(w)
 	t.history.SetSize(mainW-4, h-4)
 	t.jsonViewer.SetSize(w, h)
+	t.copyMenu.SetSize(w, h)
 }
 
 func (t *TabModel) Update(msg tea.Msg) (*TabModel, tea.Cmd) {

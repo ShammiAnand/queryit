@@ -86,6 +86,7 @@ func exportToFile(columns []string, pages [][]db.Row) (string, error) {
 	}
 	w.Flush()
 	if err := w.Error(); err != nil {
+		_ = os.Remove(path) // clean up partial file
 		return "", err
 	}
 	return path, nil
@@ -102,6 +103,7 @@ type CopyMenuModal struct {
 }
 
 func (c *CopyMenuModal) Show(w, h int)   { c.visible = true; c.width = w; c.height = h }
+func (c *CopyMenuModal) SetSize(w, h int) { c.width = w; c.height = h }
 func (c *CopyMenuModal) Hide()           { c.visible = false }
 func (c *CopyMenuModal) IsVisible() bool { return c.visible }
 
