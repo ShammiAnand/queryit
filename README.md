@@ -1,177 +1,64 @@
 # queryit
 
-A keyboard-driven terminal UI for PostgreSQL, MySQL, and SQLite. Faster than psql for interactive work.
+A keyboard-driven terminal UI for PostgreSQL, MySQL, and SQLite.
 
 https://github.com/user-attachments/assets/453bffb4-7984-45f3-ae2b-754d6d61077c
-
-## Features
-
-- Multi-tab connections — each tab is an independent session
-- PostgreSQL, MySQL/MariaDB, and SQLite support
-- Direct connections and SSH bastion tunneling via PEM key
-- Schema browser (`ctrl+o`) — tables, columns, indexes
-- Recent queries panel per session; searchable history with `ctrl+r`
-- Autocomplete for table and column names from live schema cache
-- Table and expanded row views; cell-level navigation with `h`/`l`
-- JSON column detection — `[J]` indicator; `enter` opens a scrollable full-screen viewer
-- Copy/export menu (`y`) — copy cell, row, or full table to clipboard; export to CSV file
-- Connection profiles stored in `~/.config/queryit/config.yaml`
 
 ## Install
 
 ```sh
-# one-liner (downloads pre-built binary, requires only curl)
 curl -fsSL https://raw.githubusercontent.com/ShammiAnand/queryit/main/install.sh | bash
-
-# custom install directory
-INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/ShammiAnand/queryit/main/install.sh | bash
-
-# from source (requires Go 1.25+)
-make install
 ```
 
-Supported platforms: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`.
+Binaries for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64` are attached to each [release](https://github.com/ShammiAnand/queryit/releases). To build from source: `make install` (requires Go 1.21+).
 
 ## Usage
 
 ```sh
-queryit                        # open with empty tab bar
-queryit --profile local-new    # connect to a saved profile on launch
-queryit profile list           # list saved profiles
+queryit                        # launch
+queryit --profile staging      # connect to a saved profile on launch
 queryit profile add            # add a profile interactively
-queryit profile remove <name>  # delete a profile
+queryit profile list
+queryit profile remove <name>
 ```
 
-## Key bindings
-
-### Global
-
-| Key | Action |
-|-----|--------|
-| `ctrl+t` | Open connection selector |
-| `tab` / `shift+tab` | Next / previous tab |
-| `ctrl+w` | Close current tab |
-| `ctrl+o` | Toggle schema browser |
-| `ctrl+q` | Quit |
-
-### Input pane
-
-| Key | Action |
-|-----|--------|
-| `F5` | Execute query |
-| `ctrl+c` | Clear input |
-| `ctrl+r` | Search query history |
-| `up` / `down` | Cycle through session queries |
-| `esc` | Cycle focus (input → recent → results → browser) |
-
-### Results pane
-
-| Key | Action |
-|-----|--------|
-| `j` / `k` | Next / previous row |
-| `h` / `l` | Previous / next column (cell cursor) |
-| `n` / `p` | Next / previous page |
-| `+` / `-` | Increase / decrease page size |
-| `v` | Toggle table / expanded row view |
-| `enter` | Open JSON viewer (current cell must show `[J]`) |
-| `y` | Open copy/export menu |
-
-### JSON viewer
-
-Opens when the focused cell contains a JSON value (`[J]` indicator visible).
-
-| Key | Action |
-|-----|--------|
-| `j` / `k` | Scroll down / up |
-| `y` | Copy raw JSON to clipboard and close |
-| `esc` | Close |
-
-### Copy / export menu
-
-| Key | Action |
-|-----|--------|
-| `c` | Copy current cell to clipboard |
-| `r` | Copy current row as CSV to clipboard |
-| `t` | Copy full result as CSV to clipboard |
-| `e` | Export full result to `~/queryit_<timestamp>.csv` |
-| `esc` | Cancel |
-
-### Schema browser
-
-| Key | Action |
-|-----|--------|
-| `j` / `k` | Navigate tables |
-| `enter` | Show table detail (columns, indexes) |
-| `space` | Paste table name into input |
-| `esc` | Back to table list |
+Press `?` at any time for the full keybinding reference.
 
 ## Configuration
 
-Config file: `~/.config/queryit/config.yaml`
+`~/.config/queryit/config.yaml`
 
 ```yaml
 profiles:
-  # PostgreSQL (default when driver is omitted)
-  local-pg:
+  local:
     host: localhost
     port: 5432
     database: mydb
     user: postgres
-    password: secret
+    password: secret          # or $ENV_VAR
 
-  # PostgreSQL via SSH bastion
   prod:
-    host: db.example.com
-    port: 5432
+    host: db.internal
     database: mydb
     user: appuser
-    password: $PROD_DB_PASSWORD   # expands from environment
+    password: $PROD_DB_PASS
     sslmode: require
-    bastion:
+    bastion:                  # SSH tunnel via PEM key
       user: ubuntu
       host: 10.0.0.1
       pem: ~/.ssh/bastion.pem
 
-  # MySQL / MariaDB
   local-mysql:
-    driver: mysql
+    driver: mysql             # postgres (default) | mysql | sqlite
     host: localhost
     port: 3306
     database: mydb
     user: root
     password: secret
 
-  # SQLite
-  analytics:
-    driver: sqlite
-    database: /path/to/analytics.db
-
 settings:
   page_size: 20
   query_timeout: 30
   history_size: 1000
+  theme: dark                 # dark | light
 ```
-
-Passwords prefixed with `$` are read from the environment at connect time.
-The `driver` field defaults to `postgres` when omitted — existing configs need no changes.
-
-## Backslash commands
-
-All commands work across drivers; the underlying query is adapted per database.
-
-| Command | Description |
-|---------|-------------|
-| `\dt` | List all tables |
-| `\d <table>` | Describe a table |
-| `\dn` | List schemas |
-| `\di` | List indexes |
-| `\df` | List functions / routines |
-| `\refresh` | Reload schema cache from the database |
-
-## Data locations
-
-| Purpose | Path |
-|---------|------|
-| Config | `$XDG_CONFIG_HOME/queryit/config.yaml` |
-| Schema cache | `$XDG_CACHE_HOME/queryit/<profile>/schema.json` |
-| Query history | `$XDG_DATA_HOME/queryit/<profile>/history` |
