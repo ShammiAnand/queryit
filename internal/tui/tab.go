@@ -72,6 +72,7 @@ type TabModel struct {
 	browser    *SchemaBrowser
 	jsonViewer *JSONViewerModal
 	copyMenu   *CopyMenuModal
+	helpViewer *HelpViewer
 
 	focus  Focus
 	width  int
@@ -102,6 +103,7 @@ func NewTab(profileName string, profile *config.Profile, settings config.Setting
 		browser:     NewSchemaBrowser(sc),
 		jsonViewer:  &JSONViewerModal{},
 		copyMenu:    &CopyMenuModal{},
+		helpViewer:  &HelpViewer{},
 		focus:       FocusInput,
 	}
 	t.input = NewInputModel(sc)
@@ -147,10 +149,11 @@ func (t *TabModel) SetSize(w, h int) {
 	}
 	t.input.SetSize(mainW, inputVisibleLines)
 	t.results.SetSize(mainW, resultsH)
-	t.statusBar.SetWidth(w)
+	t.statusBar.SetWidth(mainW)
 	t.history.SetSize(mainW-4, h-4)
 	t.jsonViewer.SetSize(w, h)
 	t.copyMenu.SetSize(w, h)
+	t.helpViewer.SetSize(w, h)
 }
 
 func (t *TabModel) Update(msg tea.Msg) (*TabModel, tea.Cmd) {
@@ -322,6 +325,18 @@ func (t *TabModel) handleKey(msg tea.KeyMsg) (*TabModel, tea.Cmd) {
 				t.statusBar.SetMessage(styleSuccess.Render("exported to " + path))
 			}
 		}
+		return t, nil
+	}
+
+	// help overlay: any key dismisses it
+	if t.helpViewer.IsVisible() {
+		t.helpViewer.Hide()
+		return t, nil
+	}
+
+	// ? toggles help only outside the query input (where ? is a typeable char)
+	if k == "?" && t.focus != FocusInput {
+		t.helpViewer.Show()
 		return t, nil
 	}
 
@@ -647,6 +662,9 @@ func (t *TabModel) View() string {
 			lipgloss.Center, lipgloss.Center,
 			t.copyMenu.View(),
 		)
+	}
+	if t.helpViewer.IsVisible() {
+		return t.helpViewer.View()
 	}
 
 	bw := t.browser.Width()

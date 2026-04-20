@@ -566,6 +566,7 @@ type AppModel struct {
 }
 
 func NewApp(cfg *config.Config, autoProfile string) (*AppModel, tea.Cmd) {
+	ApplyThemeByName(cfg.Settings.Theme)
 	app := &AppModel{
 		cfg:      cfg,
 		tabBar:   NewTabBar(),
@@ -611,6 +612,11 @@ func (app *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "ctrl+u":
+			name := ToggleTheme()
+			app.cfg.Settings.Theme = name
+			_ = config.Save(app.cfg)
+			return app, nil
 		case "ctrl+q":
 			app.closeAll()
 			return app, tea.Quit

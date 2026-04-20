@@ -51,6 +51,7 @@ type Settings struct {
 	DefaultView  string `yaml:"default_view"`
 	HistorySize  int    `yaml:"history_size"`
 	QueryTimeout int    `yaml:"query_timeout"`
+	Theme        string `yaml:"theme"`
 }
 
 type Config struct {
@@ -127,6 +128,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Settings.QueryTimeout == 0 {
 		cfg.Settings.QueryTimeout = 30
+	}
+	if cfg.Settings.Theme == "" {
+		cfg.Settings.Theme = "dark"
 	}
 }
 

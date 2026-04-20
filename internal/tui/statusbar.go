@@ -83,7 +83,7 @@ func (s *StatusBar) View() string {
 		content += "  " + styleMuted.Render("|") + "  " + info
 	}
 
-	help := styleMuted.Render("tab: next  f5: run  ctrl+c: clear  esc: cycle focus  ctrl+q: quit")
+	help := styleMuted.Render("tab: next  f5: run  ctrl+c: clear  esc: cycle focus  ?: help  ctrl+q: quit")
 
 	w := s.width
 	if w == 0 {
