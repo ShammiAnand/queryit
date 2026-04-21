@@ -13,6 +13,9 @@ die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 need() { command -v "$1" &>/dev/null || die "required tool not found: $1 (please install it)"; }
 
+tmp=""
+trap 'rm -rf "$tmp"' EXIT
+
 # ── detect platform ───────────────────────────────────────────────────────────
 
 detect_platform() {
@@ -72,9 +75,7 @@ main() {
   local url="https://github.com/${REPO}/releases/download/${tag}/${BINARY}_${platform}.tar.gz"
 
   info "downloading $BINARY $tag ($platform)..."
-  local tmp
   tmp=$(mktemp -d)
-  trap 'rm -rf "$tmp"' EXIT
 
   if ! curl -fsSL "$url" -o "$tmp/${BINARY}.tar.gz"; then
     die "download failed: $url\nCheck https://github.com/${REPO}/releases for available builds."
