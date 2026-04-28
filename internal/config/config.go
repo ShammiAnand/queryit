@@ -52,6 +52,7 @@ type Settings struct {
 	HistorySize  int    `yaml:"history_size"`
 	QueryTimeout int    `yaml:"query_timeout"`
 	Theme        string `yaml:"theme"`
+	PingInterval int    `yaml:"ping_interval"`
 }
 
 type Config struct {
@@ -67,6 +68,7 @@ func DefaultConfig() *Config {
 			DefaultView:  "table",
 			HistorySize:  1000,
 			QueryTimeout: 30,
+			PingInterval: 10,
 		},
 	}
 }
@@ -131,6 +133,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Settings.Theme == "" {
 		cfg.Settings.Theme = "dark"
+	}
+	if cfg.Settings.PingInterval == 0 {
+		cfg.Settings.PingInterval = 10
 	}
 }
 

@@ -52,6 +52,11 @@ type schemaRefreshDoneMsg struct {
 	err  error
 }
 type reconnectMsg struct{ id tabID }
+type pingTickMsg struct{ id tabID }
+type pingDoneMsg struct {
+	id tabID
+	ok bool
+}
 
 type TabModel struct {
 	id          tabID
@@ -126,6 +131,24 @@ func (t *TabModel) Connect() tea.Cmd {
 	}
 }
 
+func (t *TabModel) schedulePing() tea.Cmd {
+	interval := time.Duration(t.settings.PingInterval) * time.Second
+	id := t.id
+	return tea.Tick(interval, func(time.Time) tea.Msg {
+		return pingTickMsg{id: id}
+	})
+}
+
+func (t *TabModel) doPing() tea.Cmd {
+	conn := t.conn
+	id := t.id
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return pingDoneMsg{id: id, ok: conn.Ping(ctx) == nil}
+	}
+}
+
 const (
 	inputVisibleLines = 4
 	inputBoxH         = inputVisibleLines + 2 // +2 for border
@@ -171,7 +194,7 @@ func (t *TabModel) Update(msg tea.Msg) (*TabModel, tea.Cmd) {
 		t.driver = msg.conn.Driver
 		t.executor = db.NewExecutor(t.driver, t.settings.PageSize)
 		t.statusBar.SetConnected(t.profileName)
-		return t, t.refreshSchema()
+		return t, tea.Batch(t.refreshSchema(), t.schedulePing())
 
 	case schemaRefreshDoneMsg:
 		if msg.id != t.id {
@@ -206,6 +229,27 @@ func (t *TabModel) Update(msg tea.Msg) (*TabModel, tea.Cmd) {
 			return t, nil
 		}
 		return t, t.Connect()
+
+	case pingTickMsg:
+		if msg.id != t.id {
+			return t, nil
+		}
+		if t.conn == nil || !t.statusBar.IsConnected() {
+			return t, nil
+		}
+		t.statusBar.SetPinging()
+		return t, t.doPing()
+
+	case pingDoneMsg:
+		if msg.id != t.id {
+			return t, nil
+		}
+		if msg.ok {
+			t.statusBar.SetConnected(t.profileName)
+			return t, t.schedulePing()
+		}
+		t.statusBar.SetDisconnected()
+		return t, nil
 
 	case tea.KeyMsg:
 		return t.handleKey(msg)

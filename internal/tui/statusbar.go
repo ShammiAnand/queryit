@@ -13,6 +13,7 @@ const (
 	StateDisconnected ConnState = iota
 	StateConnecting
 	StateConnected
+	StatePinging
 )
 
 type StatusBar struct {
@@ -44,6 +45,15 @@ func (s *StatusBar) SetConnecting() {
 	s.message = ""
 }
 
+func (s *StatusBar) SetPinging() {
+	s.state = StatePinging
+	s.message = styleMuted.Render("pinging...")
+}
+
+func (s *StatusBar) IsConnected() bool {
+	return s.state == StateConnected
+}
+
 func (s *StatusBar) SetQueryResult(rows int, elapsed time.Duration) {
 	s.rowCount = rows
 	s.elapsed = elapsed
@@ -65,6 +75,8 @@ func (s *StatusBar) View() string {
 		connStr = styleStatusConnected.Render("connected")
 	case StateConnecting:
 		connStr = styleStatusConnecting.Render("connecting...")
+	case StatePinging:
+		connStr = styleMuted.Render("pinging...")
 	default:
 		connStr = styleStatusDisconnected.Render("disconnected")
 	}
