@@ -162,7 +162,8 @@ func (h *HistoryModel) View() string {
 		return ""
 	}
 	title := stylePaneTitle.Render("Query History") + "  " + styleMuted.Render("(ctrl+r to close)")
-	searchLine := "Search: " + h.search + "█"
+	searchLine := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("Search: ") +
+		h.search + styleCursor.Render("█")
 
 	maxItems := h.height - 6
 	if maxItems < 1 {

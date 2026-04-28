@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // JSONViewerModal is a full-screen overlay that pretty-prints a JSON string.
@@ -106,9 +108,9 @@ func (j *JSONViewerModal) View() string {
 
 	scrollInfo := ""
 	if len(j.lines) > vis {
-		scrollInfo = "\n\n" + styleMuted.Render(
-			fmt.Sprintf("lines %d–%d / %d", start+1, end, len(j.lines)),
-		)
+		scrollInfo = "\n\n" + styleMuted.Render("lines ") +
+			lipgloss.NewStyle().Foreground(colorAccent).Render(fmt.Sprintf("%d–%d", start+1, end)) +
+			styleMuted.Render(fmt.Sprintf(" / %d", len(j.lines)))
 	}
 
 	content := strings.Join([]string{title, sep, body}, "\n") + scrollInfo

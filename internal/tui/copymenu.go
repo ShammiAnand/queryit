@@ -120,7 +120,9 @@ func (c *CopyMenuModal) View() string {
 	title := bold.Render("Copy / Export")
 	sep := styleMuted.Render(strings.Repeat("─", w-6))
 
-	key := func(k string) string { return lipgloss.NewStyle().Bold(true).Render("[" + k + "]") }
+	key := func(k string) string {
+		return lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render("[" + k + "]")
+	}
 
 	row1 := key("c") + " cell    " + key("r") + " row    " + key("t") + " table to clipboard"
 	row2 := key("e") + " export table to CSV file    " + styleMuted.Render("[esc] cancel")

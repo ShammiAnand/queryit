@@ -229,7 +229,9 @@ func (r *ResultsModel) View() string {
 
 func (r *ResultsModel) innerView() string {
 	if r.result == nil {
-		hint := styleMuted.Render("Execute a query with F5 to see results")
+		hint := styleMuted.Render("Execute a query with ") +
+			lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("F5") +
+			styleMuted.Render(" to see results")
 		return "\n" + center(hint, r.width-6)
 	}
 

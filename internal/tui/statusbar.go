@@ -81,13 +81,15 @@ func (s *StatusBar) View() string {
 		connStr = styleStatusDisconnected.Render("disconnected")
 	}
 
-	profile := styleMuted.Render(s.profile)
+	profile := lipgloss.NewStyle().Foreground(colorFg).Render(s.profile)
 
 	var info string
 	if s.message != "" {
 		info = s.message
 	} else if s.state == StateConnected && s.rowCount > 0 {
-		info = fmt.Sprintf("%d rows | %s", s.rowCount, s.elapsed.Round(time.Millisecond))
+		info = lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(fmt.Sprintf("%d rows", s.rowCount)) +
+			styleMuted.Render(" | ") +
+			styleMuted.Render(s.elapsed.Round(time.Millisecond).String())
 	}
 
 	content := connStr + "  " + profile
