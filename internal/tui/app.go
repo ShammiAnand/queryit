@@ -227,10 +227,7 @@ func (f *ProfileForm) submit() (string, *config.Profile, bool) {
 }
 
 func (f *ProfileForm) View() string {
-	w := f.width - 6
-	if w > 72 {
-		w = 72
-	}
+	w := f.width * 80 / 100
 	if w < 48 {
 		w = 48
 	}
@@ -486,10 +483,7 @@ func (ps *ProfileSelector) View(width, height int) string {
 		return ""
 	}
 
-	w := width - 6
-	if w > 72 {
-		w = 72
-	}
+	w := width * 80 / 100
 	if w < 48 {
 		w = 48
 	}
@@ -736,15 +730,8 @@ func (app *AppModel) View() string {
 
 	if app.selector.IsVisible() {
 		overlay := app.selector.View(app.width, app.height)
-		overlayH := strings.Count(overlay, "\n") + 1
-		// centre overlay vertically inside mainView
-		topPad := (app.height - 1 - overlayH) / 2
-		if topPad < 0 {
-			topPad = 0
-		}
-		paddedOverlay := strings.Repeat("\n", topPad) + overlay
-		// overlay replaces centre of main — simple join is fine for modal feel
-		return lipgloss.JoinVertical(lipgloss.Left, tabBarView, paddedOverlay)
+		return lipgloss.JoinVertical(lipgloss.Left, tabBarView,
+			lipgloss.Place(app.width, app.height-1, lipgloss.Center, lipgloss.Center, overlay))
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, tabBarView, mainView)
