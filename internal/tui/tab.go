@@ -151,7 +151,7 @@ func (t *TabModel) doPing() tea.Cmd {
 
 const (
 	inputVisibleLines = 4
-	inputBoxH         = inputVisibleLines + 2 // +2 for border
+	inputBoxH         = inputVisibleLines + 2
 	statusH           = 1
 )
 
@@ -449,13 +449,18 @@ func (t *TabModel) handleKey(msg tea.KeyMsg) (*TabModel, tea.Cmd) {
 
 	switch t.focus {
 	case FocusInput:
-		consumed, execRequested, clearRequested := t.input.Update(msg)
+		consumed, execRequested, clearRequested, formatRequested := t.input.Update(msg)
 		if clearRequested {
 			t.input.Clear()
 			return t, nil
 		}
 		if execRequested {
 			return t, t.executeQuery()
+		}
+		if formatRequested {
+			formatted := FormatSQL(t.input.Value())
+			t.input.SetValue(formatted)
+			return t, nil
 		}
 		_ = consumed
 
@@ -542,9 +547,9 @@ func (t *TabModel) executeQuery() tea.Cmd {
 	// prepend to session-only list (newest first)
 	t.sessionQueries = append([]string{raw}, t.sessionQueries...)
 	t.input.SetHistory(t.sessionQueries)
-	t.recent.SetEntries(t.sessionQueries)
-	t.SetSize(t.width, t.height)
 	t.input.Clear()
+	t.recent.SetEntries(t.sessionQueries)
+	t.SetSize(t.width, t.height) // reflow for recent panel height change
 
 	// handle backslash commands synchronously
 	if strings.HasPrefix(raw, `\`) {

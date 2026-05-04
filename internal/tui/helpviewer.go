@@ -46,6 +46,7 @@ var helpContent = []helpSection{
 		title: "Query Input",
 		rows: [][2]string{
 			{"f5 / ctrl+enter", "execute query"},
+			{"f4", "format SQL (pretty-print)"},
 			{"ctrl+c", "cancel running / clear input"},
 			{"up / down", "cycle query history"},
 			{"esc", "switch focus"},

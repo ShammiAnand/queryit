@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -8,19 +9,20 @@ import (
 	"github.com/shammianand/queryit/internal/cache"
 )
 
+func itoa(n int) string { return strconv.Itoa(n) }
+
 // InputModel is a fixed-height multi-line editor.
-// Up/down on a single-line (no newlines) cycles through history.
-// The box height never changes — it scrolls internally if needed.
+// The box always shows visibleLines lines and scrolls internally.
+// Up/down on the first/last line cycles through history.
 type InputModel struct {
 	lines      []string
 	cursorLine int
 	cursorCol  int
 	focused    bool
-	// viewOffset is the first line visible inside the fixed box
-	viewOffset int
-	// maxVisibleLines is set by SetSize
-	maxVisibleLines int
-	width           int
+	// viewOffset is the first line visible inside the fixed window
+	viewOffset   int
+	visibleLines int // fixed height (default 4); set via SetSize
+	width        int
 
 	autocomplete *AutocompleteModel
 
@@ -32,10 +34,10 @@ type InputModel struct {
 
 func NewInputModel(schema *cache.SchemaCache) *InputModel {
 	return &InputModel{
-		lines:           []string{""},
-		autocomplete:    NewAutocompleteModel(schema),
-		historyIdx:      -1,
-		maxVisibleLines: 4,
+		lines:        []string{""},
+		autocomplete: NewAutocompleteModel(schema),
+		historyIdx:   -1,
+		visibleLines: 4,
 	}
 }
 
@@ -44,12 +46,13 @@ func (m *InputModel) SetHistory(entries []string) {
 	m.history = entries
 }
 
-// SetSize fixes the visible line count and width.
+// SetSize fixes the width and the number of visible lines.
 func (m *InputModel) SetSize(w, visibleLines int) {
 	m.width = w
 	if visibleLines > 0 {
-		m.maxVisibleLines = visibleLines
+		m.visibleLines = visibleLines
 	}
+	m.clampViewOffset()
 }
 
 func (m *InputModel) SetFocused(f bool) {
@@ -84,14 +87,14 @@ func (m *InputModel) Clear() {
 	m.autocomplete.Hide()
 }
 
-// Update processes a key and returns (consumed, executeRequested, clearRequested).
-func (m *InputModel) Update(msg tea.Msg) (consumed, execRequested, clearRequested bool) {
+// Update processes a key and returns (consumed, execRequested, clearRequested, formatRequested).
+func (m *InputModel) Update(msg tea.Msg) (consumed, execRequested, clearRequested, formatRequested bool) {
 	if !m.focused {
-		return false, false, false
+		return false, false, false, false
 	}
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
-		return false, false, false
+		return false, false, false, false
 	}
 
 	// autocomplete captures up/down/enter/esc when visible
@@ -99,96 +102,99 @@ func (m *InputModel) Update(msg tea.Msg) (consumed, execRequested, clearRequeste
 		switch keyMsg.String() {
 		case "up":
 			m.autocomplete.Prev()
-			return true, false, false
+			return true, false, false, false
 		case "down":
 			m.autocomplete.Next()
-			return true, false, false
+			return true, false, false, false
 		case "enter":
 			if accepted := m.autocomplete.Accept(); accepted != "" {
 				m.insertCompletion(accepted)
 			}
-			return true, false, false
+			return true, false, false, false
 		case "esc":
 			m.autocomplete.Hide()
-			return true, false, false
+			return true, false, false, false
 		}
 	}
 
 	switch keyMsg.String() {
 	case "ctrl+enter", "f5":
-		return true, true, false
+		return true, true, false, false
+
+	case "f4":
+		return true, false, false, true
 
 	case "esc":
 		m.autocomplete.Hide()
-		return false, false, false // propagate → switch focus
+		return false, false, false, false // propagate → switch focus
 
 	case "ctrl+c":
-		return true, false, true // clear
+		return true, false, true, false // clear
 
 	case "backspace":
 		m.backspace()
 		m.historyIdx = -1
 		m.updateAutocomplete()
-		return true, false, false
+		return true, false, false, false
 
 	case "delete":
 		m.deleteForward()
 		m.historyIdx = -1
 		m.updateAutocomplete()
-		return true, false, false
+		return true, false, false, false
 
 	case "left", "ctrl+b":
 		m.moveCursorLeft()
-		return true, false, false
+		return true, false, false, false
 
 	case "right", "ctrl+f":
 		m.moveCursorRight()
-		return true, false, false
+		return true, false, false, false
 
 	case "up":
 		// single-line with no content below/above → cycle history
 		if m.cursorLine == 0 {
 			m.historyUp()
-			return true, false, false
+			return true, false, false, false
 		}
 		m.cursorLine--
 		if m.cursorCol > len(m.lines[m.cursorLine]) {
 			m.cursorCol = len(m.lines[m.cursorLine])
 		}
 		m.clampViewOffset()
-		return true, false, false
+		return true, false, false, false
 
 	case "down":
 		if m.cursorLine == len(m.lines)-1 {
 			m.historyDown()
-			return true, false, false
+			return true, false, false, false
 		}
 		m.cursorLine++
 		if m.cursorCol > len(m.lines[m.cursorLine]) {
 			m.cursorCol = len(m.lines[m.cursorLine])
 		}
 		m.clampViewOffset()
-		return true, false, false
+		return true, false, false, false
 
 	case "home", "ctrl+a":
 		m.cursorCol = 0
-		return true, false, false
+		return true, false, false, false
 
 	case "end", "ctrl+e":
 		m.cursorCol = len(m.lines[m.cursorLine])
-		return true, false, false
+		return true, false, false, false
 
 	case "enter":
 		m.insertNewline()
 		m.historyIdx = -1
 		m.updateAutocomplete()
-		return true, false, false
+		return true, false, false, false
 
 	case "ctrl+r":
-		return false, false, false // parent handles history overlay
+		return false, false, false, false // parent handles history overlay
 
 	case "ctrl+tab", "ctrl+t", "ctrl+w", "ctrl+n", "ctrl+p", "ctrl+q":
-		return false, false, false // global — don't consume
+		return false, false, false, false // global — don't consume
 	}
 
 	if len(keyMsg.Runes) > 0 {
@@ -197,10 +203,10 @@ func (m *InputModel) Update(msg tea.Msg) (consumed, execRequested, clearRequeste
 		}
 		m.historyIdx = -1
 		m.updateAutocomplete()
-		return true, false, false
+		return true, false, false, false
 	}
 
-	return false, false, false
+	return false, false, false, false
 }
 
 // historyUp loads an older entry.
@@ -341,8 +347,8 @@ func (m *InputModel) clampViewOffset() {
 	if m.cursorLine < m.viewOffset {
 		m.viewOffset = m.cursorLine
 	}
-	if m.cursorLine >= m.viewOffset+m.maxVisibleLines {
-		m.viewOffset = m.cursorLine - m.maxVisibleLines + 1
+	if m.cursorLine >= m.viewOffset+m.visibleLines {
+		m.viewOffset = m.cursorLine - m.visibleLines + 1
 	}
 }
 
@@ -352,14 +358,14 @@ var (
 
 func (m *InputModel) View() string {
 	// render only the visible window of lines
-	end := m.viewOffset + m.maxVisibleLines
+	end := m.viewOffset + m.visibleLines
 	if end > len(m.lines) {
 		end = len(m.lines)
 	}
-	visibleLines := m.lines[m.viewOffset:end]
+	window := m.lines[m.viewOffset:end]
 
 	var rendered []string
-	for i, line := range visibleLines {
+	for i, line := range window {
 		li := i + m.viewOffset
 		if li == m.cursorLine && m.focused {
 			col := m.cursorCol
@@ -381,8 +387,8 @@ func (m *InputModel) View() string {
 		}
 	}
 
-	// pad to exactly maxVisibleLines so the box height never changes
-	for len(rendered) < m.maxVisibleLines {
+	// pad to exactly visibleLines so the box height never changes
+	for len(rendered) < m.visibleLines {
 		rendered = append(rendered, "")
 	}
 
@@ -392,6 +398,38 @@ func (m *InputModel) View() string {
 	if borderW < 10 {
 		borderW = 10
 	}
+	// scroll indicator: right-align ↑N / ↓N inside the last content line.
+	// This is the empty padding row when content < visibleLines, so it
+	// never overwrites SQL text in the normal case.
+	above := m.viewOffset
+	below := len(m.lines) - (m.viewOffset + m.visibleLines)
+	if below < 0 {
+		below = 0
+	}
+	if above > 0 || below > 0 {
+		var parts []string
+		if above > 0 {
+			parts = append(parts, "↑"+itoa(above))
+		}
+		if below > 0 {
+			parts = append(parts, "↓"+itoa(below))
+		}
+		indStr := styleMuted.Render(strings.Join(parts, " "))
+		indW := lipgloss.Width(indStr)
+
+		// inner content width = borderW minus lipgloss Padding(0,1) on each side
+		innerW := borderW - 2
+		lastIdx := len(rendered) - 1
+		existingW := lipgloss.Width(rendered[lastIdx])
+		spaces := innerW - existingW - indW
+		if spaces < 1 {
+			spaces = 1
+		}
+		rendered[lastIdx] = rendered[lastIdx] + strings.Repeat(" ", spaces) + indStr
+		// rebuild content after modifying last line
+		content = strings.Join(rendered, "\n")
+	}
+
 	var border lipgloss.Style
 	if m.focused {
 		border = styleInputBorderFocused.Width(borderW)
